@@ -27,3 +27,4 @@ Brain.
 test-beads/
 config.yaml
 dist/
+.worktrees/

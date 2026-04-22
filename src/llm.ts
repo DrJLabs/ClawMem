@@ -951,7 +951,7 @@ export class LlamaCpp implements LLM {
         temperature,
       };
       if (this.remoteLlmReasoningEffort) {
-        body.reasoning = { effort: this.remoteLlmReasoningEffort };
+        body.reasoning_effort = this.remoteLlmReasoningEffort;
       }
       const resp = await fetch(`${this.remoteLlmUrl}/v1/chat/completions`, {
         method: "POST",

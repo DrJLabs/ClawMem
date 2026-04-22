@@ -16,6 +16,9 @@ import { enrichResults, reciprocalRankFusion, toRanked } from "./search-utils.ts
 import { applyCompositeScoring, hasRecencyIntent, type EnrichedResult } from "./memory.ts";
 import { applyMMRDiversity } from "./mmr.ts";
 import { listCollections } from "./collections.ts";
+import { createAdminRoutes } from "./admin/router.ts";
+import { recoverPendingAdminJobs } from "./admin/jobs.ts";
+import { serveConsoleAsset } from "./admin/static.ts";
 import { classifyIntent, type IntentType } from "./intent.ts";
 import { getDefaultLlamaCpp } from "./llm.ts";
 import {
@@ -729,8 +732,8 @@ const routes: Route[] = [
   { method: "GET",  pattern: /^\/export$/,                 handler: handleExport },
 ];
 
-function matchRoute(method: string, pathname: string): RouteHandler | null {
-  for (const route of routes) {
+function matchRoute(method: string, pathname: string, routeSet: Route[] = routes): RouteHandler | null {
+  for (const route of routeSet) {
     if (route.method === method && route.pattern.test(pathname)) {
       return route.handler;
     }
@@ -743,6 +746,15 @@ function matchRoute(method: string, pathname: string): RouteHandler | null {
 // =============================================================================
 
 export function startServer(store: Store, port: number = 7438, host: string = "127.0.0.1") {
+  recoverPendingAdminJobs(store);
+
+  const adminRoutes: Route[] = createAdminRoutes(store).map((route) => ({
+    method: route.method,
+    pattern: route.pattern,
+    handler: async (req, url) => route.handler(req, url),
+  }));
+  const allRoutes = [...routes, ...adminRoutes];
+
   return Bun.serve({
     port,
     hostname: host,
@@ -766,8 +778,11 @@ export function startServer(store: Store, port: number = 7438, host: string = "1
       const authError = checkAuth(req);
       if (authError) return authError;
 
+      const consoleResponse = serveConsoleAsset(url.pathname);
+      if (consoleResponse) return consoleResponse;
+
       // Route matching
-      const handler = matchRoute(req.method, url.pathname);
+      const handler = matchRoute(req.method, url.pathname, allRoutes);
       if (!handler) {
         return jsonError(`Not found: ${req.method} ${url.pathname}`, 404);
       }

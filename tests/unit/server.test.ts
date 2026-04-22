@@ -3,8 +3,9 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { unlinkSync } from "fs";
+import { mkdirSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { createStore, type Store } from "../../src/store.ts";
+import { saveConfig } from "../../src/collections.ts";
 import { hashContent } from "../../src/indexer.ts";
 import { startServer } from "../../src/server.ts";
 
@@ -13,6 +14,8 @@ let server: ReturnType<typeof startServer>;
 let authDocHash: string;
 let handoffDocHash: string;
 const TEST_DB = "/tmp/clawmem-server-test.sqlite";
+const TEST_CONFIG_DIR = "/tmp/clawmem-server-config";
+const TEST_UI_DIST = "/tmp/clawmem-server-ui-dist";
 const PORT = 17438;
 const BASE = `http://127.0.0.1:${PORT}`;
 
@@ -20,8 +23,20 @@ beforeAll(() => {
   try { unlinkSync(TEST_DB); } catch {}
   try { unlinkSync(TEST_DB + "-wal"); } catch {}
   try { unlinkSync(TEST_DB + "-shm"); } catch {}
+  rmSync(TEST_CONFIG_DIR, { recursive: true, force: true });
+  rmSync(TEST_UI_DIST, { recursive: true, force: true });
   process.env.INDEX_PATH = TEST_DB;
+  process.env.CLAWMEM_CONFIG_DIR = TEST_CONFIG_DIR;
+  process.env.CLAWMEM_CONSOLE_DIST_DIR = TEST_UI_DIST;
   delete process.env.CLAWMEM_API_TOKEN;
+  saveConfig({
+    collections: {
+      configured: {
+        path: "/tmp/clawmem-server-missing-collection",
+        pattern: "**/*.md",
+      },
+    },
+  });
   store = createStore(TEST_DB);
 
   // Seed test data — use real SHA-256 hashes so docid lookup works (6-char hex prefix)
@@ -52,6 +67,10 @@ afterAll(() => {
   try { unlinkSync(TEST_DB); } catch {}
   try { unlinkSync(TEST_DB + "-wal"); } catch {}
   try { unlinkSync(TEST_DB + "-shm"); } catch {}
+  rmSync(TEST_CONFIG_DIR, { recursive: true, force: true });
+  rmSync(TEST_UI_DIST, { recursive: true, force: true });
+  delete process.env.CLAWMEM_CONFIG_DIR;
+  delete process.env.CLAWMEM_CONSOLE_DIST_DIR;
 });
 
 describe("GET /health", () => {
@@ -147,6 +166,75 @@ describe("GET /collections", () => {
   });
 });
 
+describe("GET /admin/overview", () => {
+  test("returns operator overview payload", async () => {
+    const res = await fetch(`${BASE}/admin/overview`);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.health).toBeDefined();
+    expect(data.backlog).toBeDefined();
+    expect(data.lanes).toBeDefined();
+  });
+});
+
+describe("POST /admin/jobs/reindex", () => {
+  test("creates a tracked operator job", async () => {
+    const res = await fetch(`${BASE}/admin/jobs/reindex`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collection: "configured" }),
+    });
+    expect(res.status).toBe(202);
+    const data = await res.json() as any;
+    expect(data.job.id).toBeTruthy();
+    expect(data.job.status).toBe("queued");
+  });
+
+  test("transitions the queued reindex job to a terminal state", async () => {
+    const res = await fetch(`${BASE}/admin/jobs/reindex`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collection: "configured" }),
+    });
+    expect(res.status).toBe(202);
+    const data = await res.json() as any;
+    const jobId = data.job.id;
+
+    let job = store.getAdminJob(jobId);
+    const timeoutAt = Date.now() + 5000;
+    while (job && (job.status === "queued" || job.status === "running") && Date.now() < timeoutAt) {
+      await Bun.sleep(50);
+      job = store.getAdminJob(jobId);
+    }
+
+    expect(job).toBeTruthy();
+    expect(job!.status).toBe("failed");
+    expect(job!.error_text).toContain("no such file");
+  });
+
+  test("rejects unknown collections up front", async () => {
+    const res = await fetch(`${BASE}/admin/jobs/reindex`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collection: "missing" }),
+    });
+    expect(res.status).toBe(404);
+    const data = await res.json() as any;
+    expect(data.error).toContain("missing");
+  });
+
+  test("rejects malformed JSON bodies", async () => {
+    const res = await fetch(`${BASE}/admin/jobs/reindex`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{not-json",
+    });
+    expect(res.status).toBe(400);
+    const data = await res.json() as any;
+    expect(data.error).toContain("Invalid JSON");
+  });
+});
+
 describe("GET /lifecycle/status", () => {
   test("returns lifecycle stats", async () => {
     const res = await fetch(`${BASE}/lifecycle/status`);
@@ -174,6 +262,39 @@ describe("404 handling", () => {
   test("returns 404 for unknown routes", async () => {
     const res = await fetch(`${BASE}/nonexistent`);
     expect(res.status).toBe(404);
+  });
+
+  test("returns 404 for /console when no built UI assets are present", async () => {
+    const res = await fetch(`${BASE}/console`);
+    expect(res.status).toBe(404);
+  });
+
+  test("returns 404 for /consolefoo when no built UI assets are present", async () => {
+    const res = await fetch(`${BASE}/consolefoo`);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("console asset serving", () => {
+  test("serves built UI index and assets from /console", async () => {
+    mkdirSync(TEST_UI_DIST, { recursive: true });
+    writeFileSync(`${TEST_UI_DIST}/index.html`, "<!doctype html><html><body>console</body></html>");
+    writeFileSync(`${TEST_UI_DIST}/app.js`, "console.log('ok');");
+
+    const indexRes = await fetch(`${BASE}/console`);
+    expect(indexRes.status).toBe(200);
+    const indexHtml = await indexRes.text();
+    expect(indexHtml).toContain("console");
+
+    const assetRes = await fetch(`${BASE}/console/app.js`);
+    expect(assetRes.status).toBe(200);
+    const assetText = await assetRes.text();
+    expect(assetText).toContain("console.log");
+
+    const missingAssetRes = await fetch(`${BASE}/console/missing.js`);
+    expect(missingAssetRes.status).toBe(404);
+
+    rmSync(TEST_UI_DIST, { recursive: true, force: true });
   });
 });
 

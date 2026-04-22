@@ -47,6 +47,17 @@
       "help": "Model name sent to the configured LLM endpoint",
       "advanced": true
     },
+    "gpuLlmReasoningEffort": {
+      "label": "Reasoning Effort",
+      "placeholder": "none",
+      "help": "Optional reasoning effort (none, minimal, low, medium, high, xhigh)",
+      "advanced": true
+    },
+    "gpuLlmNoThink": {
+      "label": "Append /no_think",
+      "help": "Append /no_think to remote LLM prompts (default: true)",
+      "advanced": true
+    },
     "gpuRerank": {
       "label": "Reranker Endpoint",
       "placeholder": "http://localhost:8090",
@@ -86,6 +97,12 @@
       },
       "gpuLlmModel": {
         "type": "string"
+      },
+      "gpuLlmReasoningEffort": {
+        "type": "string"
+      },
+      "gpuLlmNoThink": {
+        "type": "boolean"
       },
       "gpuRerank": {
         "type": "string"

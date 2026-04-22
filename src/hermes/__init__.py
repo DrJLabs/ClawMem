@@ -302,6 +302,18 @@ class ClawMemProvider(MemoryProvider):
                 "secret": False,
                 "env_var": "CLAWMEM_LLM_MODEL",
             },
+            {
+                "key": "llm_reasoning_effort",
+                "description": "Optional reasoning effort (none, minimal, low, medium, high, xhigh)",
+                "secret": False,
+                "env_var": "CLAWMEM_LLM_REASONING_EFFORT",
+            },
+            {
+                "key": "llm_no_think",
+                "description": "Append /no_think to remote LLM prompts (default: true)",
+                "secret": False,
+                "env_var": "CLAWMEM_LLM_NO_THINK",
+            },
         ]
 
     # -- Core lifecycle --------------------------------------------------------
@@ -331,7 +343,15 @@ class ClawMemProvider(MemoryProvider):
             )
 
         # Build env for hook shell-outs (GPU endpoints, profile)
-        for var in ("CLAWMEM_EMBED_URL", "CLAWMEM_LLM_URL", "CLAWMEM_LLM_MODEL", "CLAWMEM_RERANK_URL", "CLAWMEM_PROFILE"):
+        for var in (
+            "CLAWMEM_EMBED_URL",
+            "CLAWMEM_LLM_URL",
+            "CLAWMEM_LLM_MODEL",
+            "CLAWMEM_LLM_REASONING_EFFORT",
+            "CLAWMEM_LLM_NO_THINK",
+            "CLAWMEM_RERANK_URL",
+            "CLAWMEM_PROFILE",
+        ):
             val = os.environ.get(var)
             if val:
                 self._env_extra[var] = val

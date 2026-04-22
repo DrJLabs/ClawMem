@@ -112,6 +112,17 @@ The plugin manifest (`src/openclaw/openclaw.plugin.json`) supports:
 | `profile` | `balanced` | Performance profile |
 | `enableTools` | true | Register agent tools |
 | `servePort` | 7438 | REST API port for agent tools |
+| `gpuEmbed` | `http://localhost:8088` | Embedding endpoint override |
+| `gpuLlm` | `http://localhost:8089` | LLM endpoint override |
+| `gpuLlmModel` | `qwen3` | Model name sent to the configured LLM endpoint |
+| `gpuRerank` | `http://localhost:8090` | Reranker endpoint override |
+
+For example, to use an OpenAI-compatible proxy instead of the default llama-server model selection:
+
+```bash
+openclaw config set plugins.entries.clawmem.config.gpuLlm http://127.0.0.1:8000
+openclaw config set plugins.entries.clawmem.config.gpuLlmModel gpt-5.4-mini
+```
 
 ## Coexistence with OpenClaw Active Memory
 

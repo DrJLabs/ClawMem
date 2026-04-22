@@ -145,18 +145,26 @@ describe("plugin manifest (§14.3 kind=memory)", () => {
     expect(content.configSchema.properties.profile).toBeDefined();
   });
 
-  test("openclaw.plugin.json exposes gpuLlmModel in uiHints and configSchema", async () => {
+  test("openclaw.plugin.json exposes remote LLM config in uiHints and configSchema", async () => {
     const file = Bun.file(`${import.meta.dir}/../../src/openclaw/openclaw.plugin.json`);
     const content = await file.json();
     expect(content.uiHints.gpuLlmModel).toBeDefined();
+    expect(content.uiHints.gpuLlmReasoningEffort).toBeDefined();
+    expect(content.uiHints.gpuLlmNoThink).toBeDefined();
     expect(content.configSchema.properties.gpuLlmModel).toBeDefined();
+    expect(content.configSchema.properties.gpuLlmReasoningEffort).toBeDefined();
+    expect(content.configSchema.properties.gpuLlmNoThink).toBeDefined();
   });
 
-  test("openclaw index maps gpuLlmModel to CLAWMEM_LLM_MODEL", async () => {
+  test("openclaw index maps remote LLM config to CLAWMEM env vars", async () => {
     const file = Bun.file(`${import.meta.dir}/../../src/openclaw/index.ts`);
     const content = await file.text();
     expect(content).toContain("pluginCfg.gpuLlmModel");
     expect(content).toContain("CLAWMEM_LLM_MODEL");
+    expect(content).toContain("pluginCfg.gpuLlmReasoningEffort");
+    expect(content).toContain("CLAWMEM_LLM_REASONING_EFFORT");
+    expect(content).toContain("pluginCfg.gpuLlmNoThink");
+    expect(content).toContain("CLAWMEM_LLM_NO_THINK");
   });
 });
 

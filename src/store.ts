@@ -486,6 +486,24 @@ function initializeDatabase(db: Database): void {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      requested_by TEXT NOT NULL,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      result_json TEXT,
+      error_text TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_jobs_created_at ON admin_jobs(created_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_jobs_status ON admin_jobs(status, created_at DESC)`);
+
   // SAME: Context usage tracking (feedback loop)
   db.exec(`
     CREATE TABLE IF NOT EXISTS context_usage (
@@ -1031,6 +1049,21 @@ export type Store = {
   getSession: (sessionId: string) => SessionRecord | null;
   getRecentSessions: (limit: number) => SessionRecord[];
 
+  // SAME: Admin job tracking
+  createAdminJob: (input: { kind: string; requested_by: string; payload_json?: string }) => number;
+  updateAdminJob: (
+    id: number,
+    patch: {
+      status?: string;
+      started_at?: string | null;
+      finished_at?: string | null;
+      result_json?: string | null;
+      error_text?: string | null;
+    },
+  ) => void;
+  getAdminJob: (id: number) => AdminJobRow | null;
+  listAdminJobs: (limit?: number) => AdminJobRow[];
+
   // SAME: Context usage tracking
   insertUsage: (usage: UsageRecord) => number;
   getUsageForSession: (sessionId: string) => UsageRow[];
@@ -1214,6 +1247,12 @@ export function createStore(dbPath?: string, opts?: { readonly?: boolean; busyTi
     updateSession: (sessionId: string, updates) => updateSessionFn(db, sessionId, updates),
     getSession: (sessionId: string) => getSessionFn(db, sessionId),
     getRecentSessions: (limit: number) => getRecentSessionsFn(db, limit),
+
+    // SAME: Admin job tracking
+    createAdminJob: (input: { kind: string; requested_by: string; payload_json?: string }) => createAdminJobFn(db, input),
+    updateAdminJob: (id: number, patch) => updateAdminJobFn(db, id, patch),
+    getAdminJob: (id: number) => getAdminJobFn(db, id),
+    listAdminJobs: (limit: number = 25) => listAdminJobsFn(db, limit),
 
     // SAME: Context usage tracking
     insertUsage: (usage: UsageRecord) => insertUsageFn(db, usage) as number,
@@ -1737,6 +1776,20 @@ export type IndexStatus = {
 // =============================================================================
 // SAME: Agent Memory Types
 // =============================================================================
+
+export type AdminJobRow = {
+  id: number;
+  kind: string;
+  status: string;
+  requested_by: string;
+  payload_json: string;
+  result_json: string | null;
+  error_text: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export type SessionRecord = {
   sessionId: string;
@@ -3973,6 +4026,93 @@ function getRecentSessionsFn(db: Database, limit: number): SessionRecord[] {
     filesChanged: row.files_changed ? JSON.parse(row.files_changed) : [],
     summary: row.summary,
   }));
+}
+
+// =============================================================================
+// SAME: Admin Job Tracking
+// =============================================================================
+
+function createAdminJobFn(
+  db: Database,
+  input: { kind: string; requested_by: string; payload_json?: string },
+): number {
+  const result = db.prepare(`
+    INSERT INTO admin_jobs (kind, requested_by, payload_json)
+    VALUES (?, ?, ?)
+  `).run(input.kind, input.requested_by, input.payload_json ?? "{}");
+  return Number(result.lastInsertRowid);
+}
+
+function updateAdminJobFn(
+  db: Database,
+  id: number,
+  patch: {
+    status?: string;
+    started_at?: string | null;
+    finished_at?: string | null;
+    result_json?: string | null;
+    error_text?: string | null;
+  },
+): void {
+  if (
+    patch.status === undefined &&
+    patch.started_at === undefined &&
+    patch.finished_at === undefined &&
+    patch.result_json === undefined &&
+    patch.error_text === undefined
+  ) {
+    return;
+  }
+
+  const sets: string[] = [];
+  const vals: (string | number | null)[] = [];
+
+  if (Object.prototype.hasOwnProperty.call(patch, "status")) {
+    sets.push("status = ?");
+    vals.push(patch.status ?? null);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "started_at")) {
+    sets.push("started_at = ?");
+    vals.push(patch.started_at ?? null);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "finished_at")) {
+    sets.push("finished_at = ?");
+    vals.push(patch.finished_at ?? null);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "result_json")) {
+    sets.push("result_json = ?");
+    vals.push(patch.result_json ?? null);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "error_text")) {
+    sets.push("error_text = ?");
+    vals.push(patch.error_text ?? null);
+  }
+
+  if (sets.length === 0) {
+    return;
+  }
+
+  sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
+  vals.push(id);
+
+  db.prepare(`
+    UPDATE admin_jobs
+    SET ${sets.join(", ")}
+    WHERE id = ?
+  `).run(...vals);
+}
+
+function getAdminJobFn(db: Database, id: number): AdminJobRow | null {
+  const row = db.prepare(`SELECT * FROM admin_jobs WHERE id = ?`).get(id) as AdminJobRow | null;
+  return row ?? null;
+}
+
+function listAdminJobsFn(db: Database, limit: number = 25): AdminJobRow[] {
+  return db.prepare(`
+    SELECT * FROM admin_jobs
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+  `).all(limit) as AdminJobRow[];
 }
 
 // =============================================================================

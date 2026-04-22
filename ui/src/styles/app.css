@@ -1,0 +1,123 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(circle at top, rgba(99, 211, 255, 0.16), transparent 32%),
+    linear-gradient(180deg, #0f1730 0%, var(--color-bg) 48%);
+  color: var(--color-text);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: var(--space-6) var(--space-4) calc(5.5rem + env(safe-area-inset-bottom));
+}
+
+.app-header {
+  margin: 0 auto var(--space-6);
+  max-width: 64rem;
+}
+
+.app-eyebrow,
+.placeholder-page__eyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-accent-strong);
+}
+
+.app-title {
+  margin: 0;
+  font-size: clamp(1.875rem, 4vw, 2.75rem);
+  line-height: 1.05;
+}
+
+.app-content {
+  margin: 0 auto;
+  max-width: 64rem;
+}
+
+.placeholder-page {
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: linear-gradient(180deg, rgba(23, 33, 61, 0.96), rgba(18, 26, 48, 0.98));
+  box-shadow: var(--shadow-panel);
+}
+
+.placeholder-page h2 {
+  margin: 0 0 var(--space-3);
+  font-size: 1.5rem;
+}
+
+.placeholder-page p {
+  margin: 0;
+  max-width: 44rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+.bottom-nav {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  left: var(--space-4);
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid rgba(56, 81, 134, 0.72);
+  border-radius: calc(var(--radius-card) + 8px);
+  background: rgba(8, 14, 30, 0.88);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-panel);
+}
+
+.bottom-nav__link {
+  padding: var(--space-3) var(--space-2);
+  border-radius: var(--radius-pill);
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.bottom-nav__link:hover,
+.bottom-nav__link:focus-visible {
+  color: var(--color-text);
+  outline: none;
+}
+
+.bottom-nav__link--active {
+  background: var(--color-nav-active);
+  color: var(--color-text);
+}
+
+@media (min-width: 768px) {
+  .app-shell {
+    padding-right: var(--space-6);
+    padding-left: var(--space-6);
+  }
+
+  .bottom-nav {
+    left: 50%;
+    max-width: 42rem;
+    transform: translateX(-50%);
+  }
+}

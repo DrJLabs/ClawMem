@@ -1,10 +1,15 @@
 import type {
+  CollectionDetailResponse,
+  CollectionsResponse,
+  CreateCollectionRequest,
+  DeleteCollectionResponse,
   MemoryFeedResponse,
   OverviewResponse,
   ReindexJobRequest,
   ReindexJobResponse,
   RunDetailResponse,
   RunsResponse,
+  UpdateCollectionRequest,
 } from "./types";
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -48,10 +53,27 @@ function isMemoryFeedItem(value: unknown): boolean {
     typeof value.type === "string" &&
     typeof value.title === "string" &&
     typeof value.summary === "string" &&
+    typeof value.body === "string" &&
     typeof value.createdAt === "string" &&
     typeof value.path === "string" &&
     (typeof value.sourceSession === "string" || value.sourceSession === null) &&
-    (typeof value.sourceRun === "number" || value.sourceRun === null)
+    (typeof value.sourceRun === "number" || value.sourceRun === null) &&
+    typeof value.sourceCount === "number"
+  );
+}
+
+function isCollectionItem(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.root === "string" &&
+    typeof value.pattern === "string" &&
+    typeof value.documents === "number" &&
+    typeof value.embeddedDocuments === "number" &&
+    typeof value.unembeddedDocuments === "number" &&
+    (typeof value.lastActivity === "string" || value.lastActivity === null) &&
+    (typeof value.updateCommand === "string" || value.updateCommand === null)
   );
 }
 
@@ -123,6 +145,34 @@ function assertMemoryFeedResponse(value: unknown): MemoryFeedResponse {
   return value as MemoryFeedResponse;
 }
 
+function assertCollectionsResponse(value: unknown): CollectionsResponse {
+  if (
+    !isObject(value) ||
+    !Array.isArray(value.items) ||
+    value.items.some((item) => !isCollectionItem(item))
+  ) {
+    throw new Error("Invalid /admin/collections response");
+  }
+
+  return value as CollectionsResponse;
+}
+
+function assertCollectionDetailResponse(value: unknown): CollectionDetailResponse {
+  if (!isObject(value) || !isCollectionItem(value.item)) {
+    throw new Error("Invalid /admin/collections/:id response");
+  }
+
+  return value as CollectionDetailResponse;
+}
+
+function assertDeleteCollectionResponse(value: unknown): DeleteCollectionResponse {
+  if (!isObject(value) || value.ok !== true || typeof value.removedId !== "string") {
+    throw new Error("Invalid DELETE /admin/collections/:id response");
+  }
+
+  return value as DeleteCollectionResponse;
+}
+
 function assertReindexJobResponse(value: unknown): ReindexJobResponse {
   if (
     !isObject(value) ||
@@ -172,6 +222,23 @@ async function json(input: RequestInfo | URL, init?: RequestInit): Promise<unkno
 export const api = {
   getOverview: async () => assertOverviewResponse(await json("/admin/overview")),
   getMemoryFeed: async () => assertMemoryFeedResponse(await json("/admin/memory-feed")),
+  getCollections: async () => assertCollectionsResponse(await json("/admin/collections")),
+  getCollection: async (collectionId: string) =>
+    assertCollectionDetailResponse(await json(`/admin/collections/${encodeURIComponent(collectionId)}`)),
+  createCollection: async (body: CreateCollectionRequest) =>
+    assertCollectionDetailResponse(await json("/admin/collections", {
+      method: "POST",
+      body: JSON.stringify(body),
+    })),
+  updateCollection: async (collectionId: string, body: UpdateCollectionRequest) =>
+    assertCollectionDetailResponse(await json(`/admin/collections/${encodeURIComponent(collectionId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    })),
+  deleteCollection: async (collectionId: string) =>
+    assertDeleteCollectionResponse(await json(`/admin/collections/${encodeURIComponent(collectionId)}`, {
+      method: "DELETE",
+    })),
   getRuns: async () => assertRunsResponse(await json("/admin/runs")),
   getRunDetail: async (runId: string) => assertRunDetailResponse(await json(`/admin/runs/${runId}`)),
   queueReindex: (body: ReindexJobRequest) =>

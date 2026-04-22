@@ -41,10 +41,34 @@ export type MemoryFeedItem = {
   type: string;
   title: string;
   summary: string;
+  body: string;
   createdAt: string;
   sourceSession: string | null;
   sourceRun: number | null;
+  sourceCount: number;
   path: string;
+};
+
+export type AdminCollectionItem = {
+  id: string;
+  name: string;
+  root: string;
+  pattern: string;
+  documents: number;
+  embeddedDocuments: number;
+  unembeddedDocuments: number;
+  lastActivity: string | null;
+  updateCommand: string | null;
+};
+
+export type AdminCollectionDetail = AdminCollectionItem;
+
+export type AdminCollectionsResponse = {
+  items: AdminCollectionItem[];
+};
+
+export type AdminCollectionDetailResponse = {
+  item: AdminCollectionDetail;
 };
 
 export type WatcherSnapshot = {

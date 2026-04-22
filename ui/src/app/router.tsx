@@ -3,21 +3,9 @@ import { App } from "./App";
 import { OverviewPage } from "../pages/OverviewPage";
 import { RunsPage } from "../pages/RunsPage";
 import { RunDetailPage } from "../pages/RunDetailPage";
-
-type PlaceholderPageProps = {
-  title: string;
-  description: string;
-};
-
-function PlaceholderPage({ title, description }: PlaceholderPageProps) {
-  return (
-    <section className="placeholder-page" aria-label={title}>
-      <p className="placeholder-page__eyebrow">Task 4 shell</p>
-      <h2>{title}</h2>
-      <p>{description}</p>
-    </section>
-  );
-}
+import { MemoryFeedPage } from "../pages/MemoryFeedPage";
+import { CollectionsPage } from "../pages/CollectionsPage";
+import { CollectionDetailPage } from "../pages/CollectionDetailPage";
 
 export const consoleBase = "/console";
 
@@ -45,29 +33,29 @@ export const appRoutes = [
       },
       {
         path: "memory",
-        element: (
-          <PlaceholderPage
-            title="Memory"
-            description="Memory feed and inspection pages are intentionally deferred until the next task."
-          />
-        ),
+        element: <MemoryFeedPage />,
       },
       {
         path: "collections",
-        element: (
-          <PlaceholderPage
-            title="Collections"
-            description="Collection management UI is deferred. This placeholder preserves the mobile operator path."
-          />
-        ),
+        children: [
+          {
+            index: true,
+            element: <CollectionsPage />,
+          },
+          {
+            path: ":collectionId",
+            element: <CollectionDetailPage />,
+          },
+        ],
       },
       {
         path: "more",
         element: (
-          <PlaceholderPage
-            title="More"
-            description="Secondary controls and logs remain out of scope for Task 4."
-          />
+          <section className="placeholder-page" aria-label="More">
+            <p className="placeholder-page__eyebrow">Task 4 shell</p>
+            <h2>More</h2>
+            <p>Secondary controls and logs remain out of scope for Task 4.</p>
+          </section>
         ),
       },
     ],

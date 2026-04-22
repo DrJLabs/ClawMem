@@ -3,6 +3,8 @@ import type {
   OverviewResponse,
   ReindexJobRequest,
   ReindexJobResponse,
+  RunDetailResponse,
+  RunsResponse,
 } from "./types";
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -53,7 +55,22 @@ function isMemoryFeedItem(value: unknown): boolean {
   );
 }
 
-function isLaneStatus(value: unknown): boolean {
+function isRunItem(value: unknown): boolean {
+  const validSources = new Set(["job", "maintenance"]);
+  return (
+    isObject(value) &&
+    typeof value.id === "string" &&
+    typeof value.label === "string" &&
+    typeof value.status === "string" &&
+    typeof value.detail === "string" &&
+    typeof value.source === "string" &&
+    validSources.has(value.source) &&
+    (typeof value.startedAt === "string" || value.startedAt === null) &&
+    (typeof value.finishedAt === "string" || value.finishedAt === null)
+  );
+}
+
+function isLaneStatus(value: unknown): value is { enabled: boolean; latestRunStatus: string | null } {
   return (
     isObject(value) &&
     typeof value.enabled === "boolean" &&
@@ -61,14 +78,18 @@ function isLaneStatus(value: unknown): boolean {
   );
 }
 
-function isHeavyLaneStatus(value: unknown): boolean {
+function isHeavyLaneStatus(
+  value: unknown,
+): value is { enabled: boolean; latestRunStatus: string | null; window: string | null } {
+  const lane = value as { window?: unknown };
   return (
     isLaneStatus(value) &&
-    (typeof value.window === "string" || value.window === null)
+    (typeof lane.window === "string" || lane.window === null)
   );
 }
 
 function assertOverviewResponse(value: unknown): OverviewResponse {
+  const lanes = isObject(value) && isObject(value.lanes) ? value.lanes : null;
   if (
     !isObject(value) ||
     !isObject(value.health) ||
@@ -77,9 +98,9 @@ function assertOverviewResponse(value: unknown): OverviewResponse {
     !isObject(value.backlog) ||
     typeof value.backlog.totalDocuments !== "number" ||
     typeof value.backlog.needsEmbedding !== "number" ||
-    !isObject(value.lanes) ||
-    !isLaneStatus(value.lanes.light) ||
-    !isHeavyLaneStatus(value.lanes.heavy) ||
+    !lanes ||
+    !isLaneStatus(lanes.light) ||
+    !isHeavyLaneStatus(lanes.heavy) ||
     !Array.isArray(value.activeJobs) ||
     value.activeJobs.some((job) => !isActiveJob(job)) ||
     !Array.isArray(value.alerts) ||
@@ -118,6 +139,20 @@ function assertReindexJobResponse(value: unknown): ReindexJobResponse {
   return value as ReindexJobResponse;
 }
 
+function assertRunsResponse(value: unknown): RunsResponse {
+  if (!isObject(value) || !Array.isArray(value.items) || value.items.some((item) => !isRunItem(item))) {
+    throw new Error("Invalid /admin/runs response");
+  }
+  return value as RunsResponse;
+}
+
+function assertRunDetailResponse(value: unknown): RunDetailResponse {
+  if (!isObject(value) || !isRunItem(value.item)) {
+    throw new Error("Invalid /admin/runs/:id response");
+  }
+  return value as RunDetailResponse;
+}
+
 async function json(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
   const response = await fetch(input, {
     ...init,
@@ -137,6 +172,8 @@ async function json(input: RequestInfo | URL, init?: RequestInit): Promise<unkno
 export const api = {
   getOverview: async () => assertOverviewResponse(await json("/admin/overview")),
   getMemoryFeed: async () => assertMemoryFeedResponse(await json("/admin/memory-feed")),
+  getRuns: async () => assertRunsResponse(await json("/admin/runs")),
+  getRunDetail: async (runId: string) => assertRunDetailResponse(await json(`/admin/runs/${runId}`)),
   queueReindex: (body: ReindexJobRequest) =>
     json("/admin/jobs/reindex", {
       method: "POST",

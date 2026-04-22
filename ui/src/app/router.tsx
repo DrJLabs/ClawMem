@@ -1,5 +1,8 @@
 import { createBrowserRouter, createMemoryRouter } from "react-router-dom";
 import { App } from "./App";
+import { OverviewPage } from "../pages/OverviewPage";
+import { RunsPage } from "../pages/RunsPage";
+import { RunDetailPage } from "../pages/RunDetailPage";
 
 type PlaceholderPageProps = {
   title: string;
@@ -25,21 +28,20 @@ export const appRoutes = [
     children: [
       {
         index: true,
-        element: (
-          <PlaceholderPage
-            title="Overview"
-            description="Overview widgets land in Task 5. The shell, routing, and data layer are now wired."
-          />
-        ),
+        element: <OverviewPage />,
       },
       {
         path: "runs",
-        element: (
-          <PlaceholderPage
-            title="Runs"
-            description="Run history views arrive in Task 5. This route keeps the navigation and app frame testable."
-          />
-        ),
+        children: [
+          {
+            index: true,
+            element: <RunsPage />,
+          },
+          {
+            path: ":runId",
+            element: <RunDetailPage />,
+          },
+        ],
       },
       {
         path: "memory",

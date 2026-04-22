@@ -177,6 +177,44 @@ describe("GET /admin/overview", () => {
   });
 });
 
+describe("GET /admin/runs", () => {
+  test("returns run history items from admin jobs and maintenance runs", async () => {
+    const jobId = store.createAdminJob({
+      kind: "reindex",
+      requested_by: "operator-console",
+      payload_json: JSON.stringify({ collection: "configured" }),
+    });
+    store.updateAdminJob(jobId, {
+      status: "completed",
+      started_at: "2026-04-22T18:00:00.000Z",
+      finished_at: "2026-04-22T18:01:00.000Z",
+    });
+
+    const res = await fetch(`${BASE}/admin/runs`);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(Array.isArray(data.items)).toBe(true);
+    expect(data.items.some((item: any) => item.id === `job-${jobId}`)).toBe(true);
+  });
+
+  test("returns run detail by stable run id", async () => {
+    const jobId = store.createAdminJob({
+      kind: "embed",
+      requested_by: "operator-console",
+    });
+    store.updateAdminJob(jobId, {
+      status: "running",
+      started_at: "2026-04-22T18:05:00.000Z",
+    });
+
+    const res = await fetch(`${BASE}/admin/runs/job-${jobId}`);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.item.id).toBe(`job-${jobId}`);
+    expect(data.item.label).toBe("embed");
+  });
+});
+
 describe("POST /admin/jobs/reindex", () => {
   test("creates a tracked operator job", async () => {
     const res = await fetch(`${BASE}/admin/jobs/reindex`, {

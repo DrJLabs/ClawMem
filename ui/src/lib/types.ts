@@ -60,6 +60,24 @@ export type MemoryFeedResponse = {
   items: MemoryFeedItem[];
 };
 
+export type RunItem = {
+  id: string;
+  source: "job" | "maintenance";
+  label: string;
+  status: string;
+  detail: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type RunsResponse = {
+  items: RunItem[];
+};
+
+export type RunDetailResponse = {
+  item: RunItem;
+};
+
 export type ReindexJobRequest = {
   collection?: string | null;
 };

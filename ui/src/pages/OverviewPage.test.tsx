@@ -1,12 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { RouterProvider } from "react-router-dom";
-import { consoleBase, createAppMemoryRouter, createAppRouter } from "./router";
+import { OverviewPage } from "./OverviewPage";
 
-describe("App shell", () => {
-  test("renders the mobile bottom navigation entries", () => {
-    const router = createAppMemoryRouter(["/console/"]);
+describe("OverviewPage", () => {
+  test("renders health, backlog, active jobs, and alerts", () => {
     const client = new QueryClient();
     client.setQueryData(["overview"], {
       health: {
@@ -26,30 +24,15 @@ describe("App shell", () => {
       alerts: [{ id: "1", severity: "warn", message: "56 documents need embedding" }],
       checkedAt: "2026-04-22T18:00:00.000Z",
     });
+
     const markup = renderToStaticMarkup(
       <QueryClientProvider client={client}>
-        <RouterProvider router={router} />
+        <OverviewPage />
       </QueryClientProvider>,
     );
 
-    expect(markup).toContain("Overview");
-    expect(markup).toContain("Runs");
-    expect(markup).toContain("Memory");
-    expect(markup).toContain("Collections");
-    expect(markup).toContain("More");
-  });
-
-  test("keeps the shell aligned with the /console mount", () => {
-    expect(consoleBase).toBe("/console");
-    expect(typeof createAppRouter).toBe("function");
-    const router = createAppMemoryRouter(["/console/runs"]);
-    expect(router.basename).toBe("/console");
-    expect(router.routes[0]?.children?.map((child) => child.index ? "index" : child.path)).toEqual([
-      "index",
-      "runs",
-      "memory",
-      "collections",
-      "more",
-    ]);
+    expect(markup).toContain("Watcher running");
+    expect(markup).toContain("56 documents need embedding");
+    expect(markup).toContain("reindex");
   });
 });

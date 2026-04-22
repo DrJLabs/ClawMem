@@ -1,6 +1,6 @@
 import type { Store } from "../store.ts";
 import { getCollection } from "../collections.ts";
-import { buildMemoryFeedModel, buildOverviewModel } from "./service.ts";
+import { buildMemoryFeedModel, buildOverviewModel, buildRunsModel, getRunDetail } from "./service.ts";
 import { queueReindexJob } from "./jobs.ts";
 import { getWatcherSnapshot } from "./runtime.ts";
 
@@ -62,6 +62,32 @@ export function createAdminRoutes(store: Store): AdminRoute[] {
         const rawLimit = Number(url.searchParams.get("limit") ?? "25");
         const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100) : 25;
         return Response.json({ items: buildMemoryFeedModel(store, limit) });
+      },
+    },
+    {
+      method: "GET",
+      pattern: /^\/admin\/runs$/,
+      handler: (_req: Request, url: URL) => {
+        const rawLimit = Number(url.searchParams.get("limit") ?? "25");
+        const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100) : 25;
+        return Response.json({ items: buildRunsModel(store, limit) });
+      },
+    },
+    {
+      method: "GET",
+      pattern: /^\/admin\/runs\/([^/]+)$/,
+      handler: (_req: Request, url: URL) => {
+        const runId = url.pathname.split("/").pop();
+        if (!runId) {
+          return Response.json({ error: "Run id is required" }, { status: 400 });
+        }
+
+        const item = getRunDetail(store, runId);
+        if (!item) {
+          return Response.json({ error: `Run not found: ${runId}` }, { status: 404 });
+        }
+
+        return Response.json({ item });
       },
     },
     {

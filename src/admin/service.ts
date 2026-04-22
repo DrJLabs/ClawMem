@@ -1,5 +1,5 @@
 import type { Store } from "../store.ts";
-import type { MemoryFeedItem, OverviewModel } from "./types.ts";
+import type { AdminRunItem, MemoryFeedItem, OverviewModel } from "./types.ts";
 
 type OverviewRuntime = {
   watcher: { activeState: string; subState: string; mainPid: number | null };
@@ -8,13 +8,21 @@ type OverviewRuntime = {
 };
 
 type MaintenanceStatusRow = {
+  id: number;
+  lane: string;
+  phase: string;
   status: string;
+  reason: string | null;
+  started_at: string;
+  finished_at: string | null;
 };
 
 type ActiveJobRow = {
   id: number;
   kind: string;
   status: string;
+  started_at: string | null;
+  finished_at: string | null;
 };
 
 type MemoryFeedRow = {
@@ -46,7 +54,7 @@ export function buildOverviewModel(store: Store, runtime: OverviewRuntime): Over
   const checkedAt = new Date().toISOString();
   const status = store.getStatus();
   const activeJobs = store.db.prepare(`
-    SELECT id, kind, status
+    SELECT id, kind, status, started_at, finished_at
     FROM admin_jobs
     WHERE status IN ('queued', 'running')
     ORDER BY datetime(created_at) DESC, id DESC
@@ -111,6 +119,92 @@ export function buildOverviewModel(store: Store, runtime: OverviewRuntime): Over
     })),
     checkedAt,
   };
+}
+
+export function buildRunsModel(store: Store, limit: number): AdminRunItem[] {
+  const jobs = store.db.prepare(`
+    SELECT id, kind, status, started_at, finished_at
+    FROM admin_jobs
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT ?
+  `).all(limit) as ActiveJobRow[];
+
+  const maintenance = store.db.prepare(`
+    SELECT id, lane, phase, status, reason, started_at, finished_at
+    FROM maintenance_runs
+    ORDER BY datetime(started_at) DESC, id DESC
+    LIMIT ?
+  `).all(limit) as MaintenanceStatusRow[];
+
+  const items: AdminRunItem[] = [
+    ...jobs.map((job) => ({
+      id: `job-${job.id}`,
+      source: "job" as const,
+      label: job.kind,
+      status: job.status,
+      detail: `Admin job #${job.id}`,
+      startedAt: job.started_at,
+      finishedAt: job.finished_at,
+    })),
+    ...maintenance.map((run) => ({
+      id: `maintenance-${run.id}`,
+      source: "maintenance" as const,
+      label: `${run.lane} / ${run.phase}`,
+      status: run.status,
+      detail: run.reason ? `${run.reason}` : "Maintenance lane activity",
+      startedAt: run.started_at,
+      finishedAt: run.finished_at,
+    })),
+  ];
+
+  return items
+    .sort((a, b) => {
+      const aTime = a.startedAt ?? a.finishedAt ?? "";
+      const bTime = b.startedAt ?? b.finishedAt ?? "";
+      return bTime.localeCompare(aTime);
+    })
+    .slice(0, limit);
+}
+
+export function getRunDetail(store: Store, runId: string): AdminRunItem | null {
+  if (runId.startsWith("job-")) {
+    const id = Number(runId.slice(4));
+    if (!Number.isFinite(id)) return null;
+    const job = store.getAdminJob(id);
+    if (!job) return null;
+    return {
+      id: runId,
+      source: "job",
+      label: job.kind,
+      status: job.status,
+      detail: job.error_text ?? `Admin job #${job.id}`,
+      startedAt: job.started_at,
+      finishedAt: job.finished_at,
+    };
+  }
+
+  if (runId.startsWith("maintenance-")) {
+    const id = Number(runId.slice("maintenance-".length));
+    if (!Number.isFinite(id)) return null;
+    const run = store.db.prepare(`
+      SELECT id, lane, phase, status, reason, started_at, finished_at
+      FROM maintenance_runs
+      WHERE id = ?
+      LIMIT 1
+    `).get(id) as MaintenanceStatusRow | undefined;
+    if (!run) return null;
+    return {
+      id: runId,
+      source: "maintenance",
+      label: `${run.lane} / ${run.phase}`,
+      status: run.status,
+      detail: run.reason ? `${run.reason}` : "Maintenance lane activity",
+      startedAt: run.started_at,
+      finishedAt: run.finished_at,
+    };
+  }
+
+  return null;
 }
 
 export function buildMemoryFeedModel(store: Store, limit: number): MemoryFeedItem[] {

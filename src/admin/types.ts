@@ -64,3 +64,19 @@ export type JournalLogEntry = {
   source: string;
   message: string;
 };
+
+export type AdminRunSource = "job" | "maintenance";
+
+export type AdminRunItem = {
+  id: string;
+  source: AdminRunSource;
+  label: string;
+  status: string;
+  detail: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type AdminRunsResponse = {
+  items: AdminRunItem[];
+};

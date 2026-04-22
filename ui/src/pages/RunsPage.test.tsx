@@ -1,0 +1,88 @@
+import { describe, expect, mock, test } from "bun:test";
+import { renderToStaticMarkup } from "react-dom/server";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { RunsPage } from "./RunsPage";
+import { RunDetailPage } from "./RunDetailPage";
+import * as apiModule from "../lib/api";
+
+describe("Runs pages", () => {
+  test("renders runs from the admin runs API", async () => {
+    const getRuns = mock(async () => ({
+      items: [
+        {
+          id: "job-7",
+          source: "job" as const,
+          label: "reindex",
+          status: "running",
+          detail: "Admin job #7",
+          startedAt: "2026-04-22T18:00:00.000Z",
+          finishedAt: null,
+        },
+      ],
+    }));
+
+    const original = apiModule.api.getRuns;
+    apiModule.api.getRuns = getRuns;
+
+    try {
+      const client = new QueryClient();
+      await client.prefetchQuery({ queryKey: ["runs"], queryFn: apiModule.api.getRuns });
+
+      const markup = renderToStaticMarkup(
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={["/runs"]}>
+            <Routes>
+              <Route path="/runs" element={<RunsPage />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+
+      expect(markup).toContain("reindex");
+      expect(markup).toContain("running");
+    } finally {
+      apiModule.api.getRuns = original;
+    }
+  });
+
+  test("renders run detail from the admin detail API", async () => {
+    const getRunDetail = mock(async () => ({
+      item: {
+        id: "job-7",
+        source: "job" as const,
+        label: "reindex",
+        status: "running",
+        detail: "Admin job #7",
+        startedAt: "2026-04-22T18:00:00.000Z",
+        finishedAt: null,
+      },
+    }));
+
+    const original = apiModule.api.getRunDetail;
+    apiModule.api.getRunDetail = getRunDetail;
+
+    try {
+      const client = new QueryClient();
+      await client.prefetchQuery({
+        queryKey: ["runs", "job-7"],
+        queryFn: () => apiModule.api.getRunDetail("job-7"),
+      });
+
+      const markup = renderToStaticMarkup(
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={["/runs/job-7"]}>
+            <Routes>
+              <Route path="/runs/:runId" element={<RunDetailPage />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+
+      expect(markup).toContain("reindex");
+      expect(markup).toContain("Admin job #7");
+    } finally {
+      apiModule.api.getRunDetail = original;
+    }
+  });
+});

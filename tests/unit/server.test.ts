@@ -5,7 +5,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdirSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { createStore, type Store } from "../../src/store.ts";
-import { saveConfig } from "../../src/collections.ts";
+import { addCollection, saveConfig } from "../../src/collections.ts";
 import { hashContent } from "../../src/indexer.ts";
 import { startServer } from "../../src/server.ts";
 
@@ -16,6 +16,8 @@ let handoffDocHash: string;
 const TEST_DB = "/tmp/clawmem-server-test.sqlite";
 const TEST_CONFIG_DIR = "/tmp/clawmem-server-config";
 const TEST_UI_DIST = "/tmp/clawmem-server-ui-dist";
+const TEST_VALID_COLLECTION_DIR = "/tmp/clawmem-server-valid-collection";
+const TEST_VALID_COLLECTION_DIR_2 = "/tmp/clawmem-server-valid-collection-2";
 const PORT = 17438;
 const BASE = `http://127.0.0.1:${PORT}`;
 
@@ -25,10 +27,14 @@ beforeAll(() => {
   try { unlinkSync(TEST_DB + "-shm"); } catch {}
   rmSync(TEST_CONFIG_DIR, { recursive: true, force: true });
   rmSync(TEST_UI_DIST, { recursive: true, force: true });
+  rmSync(TEST_VALID_COLLECTION_DIR, { recursive: true, force: true });
+  rmSync(TEST_VALID_COLLECTION_DIR_2, { recursive: true, force: true });
   process.env.INDEX_PATH = TEST_DB;
   process.env.CLAWMEM_CONFIG_DIR = TEST_CONFIG_DIR;
   process.env.CLAWMEM_CONSOLE_DIST_DIR = TEST_UI_DIST;
   delete process.env.CLAWMEM_API_TOKEN;
+  mkdirSync(TEST_VALID_COLLECTION_DIR, { recursive: true });
+  mkdirSync(TEST_VALID_COLLECTION_DIR_2, { recursive: true });
   saveConfig({
     collections: {
       configured: {
@@ -58,6 +64,15 @@ beforeAll(() => {
   store.insertContent(apiHash, apiBody, now);
   store.insertDocument("test", "notes/api.md", "API Design", apiHash, now, now);
 
+  const feedBody = "# Snapshot backup completed successfully\n\nSnapshot backup completed without errors.";
+  const feedHash = hashContent(feedBody);
+  store.insertContent(feedHash, feedBody, now);
+  store.insertDocument("_clawmem", "observations/2026-04-22-snapshot.md", "Snapshot backup completed successfully", feedHash, now, now);
+  store.updateDocumentMeta(4, { content_type: "milestone", confidence: 0.9 });
+  store.db.prepare(
+    "UPDATE documents SET narrative = ?, source_doc_ids = ? WHERE id = ?",
+  ).run("Snapshot backup completed without errors.", JSON.stringify([1, 2]), 4);
+
   server = startServer(store, PORT);
 });
 
@@ -69,6 +84,8 @@ afterAll(() => {
   try { unlinkSync(TEST_DB + "-shm"); } catch {}
   rmSync(TEST_CONFIG_DIR, { recursive: true, force: true });
   rmSync(TEST_UI_DIST, { recursive: true, force: true });
+  rmSync(TEST_VALID_COLLECTION_DIR, { recursive: true, force: true });
+  rmSync(TEST_VALID_COLLECTION_DIR_2, { recursive: true, force: true });
   delete process.env.CLAWMEM_CONFIG_DIR;
   delete process.env.CLAWMEM_CONSOLE_DIST_DIR;
 });
@@ -80,7 +97,7 @@ describe("GET /health", () => {
     const data = await res.json() as any;
     expect(data.status).toBe("ok");
     expect(data.service).toBe("clawmem");
-    expect(data.documents).toBe(3);
+    expect(data.documents).toBe(4);
   });
 });
 
@@ -89,7 +106,7 @@ describe("GET /stats", () => {
     const res = await fetch(`${BASE}/stats`);
     expect(res.status).toBe(200);
     const data = await res.json() as any;
-    expect(data.totalDocuments).toBe(3);
+    expect(data.totalDocuments).toBe(4);
   });
 });
 
@@ -174,6 +191,141 @@ describe("GET /admin/overview", () => {
     expect(data.health).toBeDefined();
     expect(data.backlog).toBeDefined();
     expect(data.lanes).toBeDefined();
+  });
+});
+
+describe("GET /admin/memory-feed", () => {
+  test("returns real _clawmem artifacts with body and lineage counts", async () => {
+    const res = await fetch(`${BASE}/admin/memory-feed`);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(Array.isArray(data.items)).toBe(true);
+    expect(data.items[0].title).toContain("Snapshot backup");
+    expect(data.items[0].body).toContain("completed without errors");
+    expect(data.items[0].sourceCount).toBe(2);
+  });
+});
+
+describe("GET/POST/PATCH/DELETE /admin/collections", () => {
+  test("lists configured collections with stable fields", async () => {
+    const res = await fetch(`${BASE}/admin/collections`);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(Array.isArray(data.items)).toBe(true);
+    expect(data.items.some((item: any) => item.name === "configured")).toBe(true);
+  });
+
+  test("creates, reads, updates, and deletes collections through the admin API", async () => {
+    const createRes = await fetch(`${BASE}/admin/collections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "operator-notes",
+        path: TEST_VALID_COLLECTION_DIR,
+        pattern: "**/*.md",
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = await createRes.json() as any;
+    expect(created.item.name).toBe("operator-notes");
+
+    const detailRes = await fetch(`${BASE}/admin/collections/operator-notes`);
+    expect(detailRes.status).toBe(200);
+    const detail = await detailRes.json() as any;
+    expect(detail.item.root).toBe(TEST_VALID_COLLECTION_DIR);
+
+    const patchRes = await fetch(`${BASE}/admin/collections/operator-notes`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: TEST_VALID_COLLECTION_DIR_2,
+        pattern: "notes/**/*.md",
+      }),
+    });
+    expect(patchRes.status).toBe(200);
+    const updated = await patchRes.json() as any;
+    expect(updated.item.root).toBe(TEST_VALID_COLLECTION_DIR_2);
+    expect(updated.item.pattern).toBe("notes/**/*.md");
+
+    const deleteRes = await fetch(`${BASE}/admin/collections/operator-notes`, {
+      method: "DELETE",
+    });
+    expect(deleteRes.status).toBe(200);
+    const deleted = await deleteRes.json() as any;
+    expect(deleted.removedId).toBe("operator-notes");
+    expect(typeof deleted.deletedDocs).toBe("number");
+    expect(typeof deleted.cleanedHashes).toBe("number");
+
+    const missingRes = await fetch(`${BASE}/admin/collections/operator-notes`);
+    expect(missingRes.status).toBe(404);
+  });
+
+  test("rejects create/update requests for missing directories", async () => {
+    const filePath = `${TEST_VALID_COLLECTION_DIR}/not-a-directory.md`;
+    writeFileSync(filePath, "# file\n");
+
+    const createRes = await fetch(`${BASE}/admin/collections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "bad-root",
+        path: "/tmp/definitely-missing-clawmem-root",
+      }),
+    });
+    expect(createRes.status).toBe(400);
+
+    const fileCreateRes = await fetch(`${BASE}/admin/collections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "bad-file-root",
+        path: filePath,
+      }),
+    });
+    expect(fileCreateRes.status).toBe(400);
+
+    const patchRes = await fetch(`${BASE}/admin/collections/configured`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: "/tmp/definitely-missing-clawmem-root",
+      }),
+    });
+    expect(patchRes.status).toBe(400);
+
+    const filePatchRes = await fetch(`${BASE}/admin/collections/configured`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: filePath,
+      }),
+    });
+    expect(filePatchRes.status).toBe(400);
+  });
+
+  test("delete removes database documents for the collection", async () => {
+    const now = new Date().toISOString();
+    const tempBody = "# Operator Notes\n\nThis collection should be deleted from the database.";
+    const tempHash = hashContent(tempBody);
+    store.insertContent(tempHash, tempBody, now);
+    store.insertDocument("temp-delete", "notes/delete-me.md", "Delete Me", tempHash, now, now);
+
+    addCollection("temp-delete", TEST_VALID_COLLECTION_DIR, "**/*.md");
+
+    const before = await fetch(`${BASE}/export`);
+    const beforeData = await before.json() as any;
+    expect(beforeData.documents.some((doc: any) => doc.collection === "temp-delete")).toBe(true);
+
+    const deleteRes = await fetch(`${BASE}/admin/collections/temp-delete`, {
+      method: "DELETE",
+    });
+    expect(deleteRes.status).toBe(200);
+    const deleted = await deleteRes.json() as any;
+    expect(deleted.deletedDocs).toBeGreaterThan(0);
+
+    const after = await fetch(`${BASE}/export`);
+    const afterData = await after.json() as any;
+    expect(afterData.documents.some((doc: any) => doc.collection === "temp-delete")).toBe(false);
   });
 });
 
@@ -278,7 +430,7 @@ describe("GET /lifecycle/status", () => {
     const res = await fetch(`${BASE}/lifecycle/status`);
     expect(res.status).toBe(200);
     const data = await res.json() as any;
-    expect(data.active).toBe(3);
+    expect(data.active).toBe(4);
   });
 });
 
@@ -353,7 +505,7 @@ describe("GET /export", () => {
     expect(res.status).toBe(200);
     const data = await res.json() as any;
     expect(data.version).toBe("1.0.0");
-    expect(data.count).toBe(3);
-    expect(data.documents.length).toBe(3);
+    expect(data.count).toBe(4);
+    expect(data.documents.length).toBe(4);
   });
 });

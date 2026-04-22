@@ -50,14 +50,52 @@ export type MemoryFeedItem = {
   type: string;
   title: string;
   summary: string;
+  body: string;
   createdAt: string;
   sourceSession: string | null;
   sourceRun: number | null;
+  sourceCount: number;
   path: string;
 };
 
 export type MemoryFeedResponse = {
   items: MemoryFeedItem[];
+};
+
+export type CollectionItem = {
+  id: string;
+  name: string;
+  root: string;
+  pattern: string;
+  documents: number;
+  embeddedDocuments: number;
+  unembeddedDocuments: number;
+  lastActivity: string | null;
+  updateCommand: string | null;
+};
+
+export type CollectionsResponse = {
+  items: CollectionItem[];
+};
+
+export type CollectionDetailResponse = {
+  item: CollectionItem;
+};
+
+export type CreateCollectionRequest = {
+  name: string;
+  path: string;
+  pattern?: string;
+};
+
+export type UpdateCollectionRequest = {
+  path?: string;
+  pattern?: string;
+};
+
+export type DeleteCollectionResponse = {
+  ok: true;
+  removedId: string;
 };
 
 export type RunItem = {

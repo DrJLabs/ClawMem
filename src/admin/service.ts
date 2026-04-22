@@ -1,5 +1,12 @@
 import type { Store } from "../store.ts";
-import type { AdminRunItem, MemoryFeedItem, OverviewModel } from "./types.ts";
+import { getCollection, listCollections, type NamedCollection } from "../collections.ts";
+import type {
+  AdminCollectionDetail,
+  AdminCollectionItem,
+  AdminRunItem,
+  MemoryFeedItem,
+  OverviewModel,
+} from "./types.ts";
 
 type OverviewRuntime = {
   watcher: { activeState: string; subState: string; mainPid: number | null };
@@ -31,6 +38,19 @@ type MemoryFeedRow = {
   path: string;
   content_type: string | null;
   created_at: string;
+  observation_type: string | null;
+  narrative: string | null;
+  facts: string | null;
+  source_doc_ids: string | null;
+  body: string;
+};
+
+type CollectionStatsRow = {
+  collection: string;
+  documents: number;
+  embedded_documents: number;
+  unembedded_documents: number;
+  last_activity: string | null;
 };
 
 function formatWindow(start: number | null, end: number | null): string | null {
@@ -209,21 +229,129 @@ export function getRunDetail(store: Store, runId: string): AdminRunItem | null {
 
 export function buildMemoryFeedModel(store: Store, limit: number): MemoryFeedItem[] {
   const rows = store.db.prepare(`
-    SELECT id, title, path, content_type, created_at
-    FROM documents
+    SELECT d.id,
+           d.title,
+           d.path,
+           d.content_type,
+           d.created_at,
+           d.observation_type,
+           d.narrative,
+           d.facts,
+           d.source_doc_ids,
+           c.doc AS body
+    FROM documents d
+    JOIN content c ON c.hash = d.hash
     WHERE active = 1 AND collection = '_clawmem'
-    ORDER BY created_at DESC
+    ORDER BY datetime(d.created_at) DESC, d.id DESC
     LIMIT ?
   `).all(limit) as MemoryFeedRow[];
 
   return rows.map((row) => ({
     documentId: String(row.id),
-    type: row.content_type ?? "note",
+    type: row.observation_type ?? row.content_type ?? "note",
     title: row.title,
-    summary: row.title,
+    summary: buildFeedSummary(row),
+    body: row.body,
     createdAt: row.created_at,
     sourceSession: null,
     sourceRun: null,
+    sourceCount: parseSourceCount(row.source_doc_ids),
     path: row.path,
   }));
+}
+
+function parseSourceCount(raw: string | null): number {
+  if (!raw) return 0;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function compactWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function extractFactSummary(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const facts = parsed
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => compactWhitespace(entry))
+      .filter(Boolean);
+    if (facts.length === 0) return null;
+    return facts.slice(0, 2).join(" ");
+  } catch {
+    return null;
+  }
+}
+
+function extractBodySummary(body: string): string {
+  const lines = body
+    .split("\n")
+    .map((line) => compactWhitespace(line))
+    .filter((line) => line.length > 0 && !line.startsWith("#") && !line.startsWith("```"));
+
+  const summary = lines.slice(0, 2).join(" ");
+  return summary || "No summary available.";
+}
+
+function buildFeedSummary(row: MemoryFeedRow): string {
+  const narrative = row.narrative ? compactWhitespace(row.narrative) : "";
+  if (narrative.length > 0) return narrative;
+
+  const factSummary = extractFactSummary(row.facts);
+  if (factSummary) return factSummary;
+
+  return extractBodySummary(row.body);
+}
+
+function buildCollectionStatsMap(store: Store): Map<string, CollectionStatsRow> {
+  const rows = store.db.prepare(`
+    SELECT collection,
+           COUNT(*) AS documents,
+           SUM(CASE WHEN embed_state = 'synced' THEN 1 ELSE 0 END) AS embedded_documents,
+           SUM(CASE WHEN embed_state IS NULL OR embed_state != 'synced' THEN 1 ELSE 0 END) AS unembedded_documents,
+           MAX(COALESCE(last_accessed_at, modified_at, created_at)) AS last_activity
+    FROM documents
+    WHERE active = 1
+    GROUP BY collection
+  `).all() as CollectionStatsRow[];
+
+  return new Map(rows.map((row) => [row.collection, row]));
+}
+
+function toCollectionItem(
+  collection: NamedCollection,
+  stats: CollectionStatsRow | undefined,
+): AdminCollectionItem {
+  return {
+    id: collection.name,
+    name: collection.name,
+    root: collection.path,
+    pattern: collection.pattern,
+    documents: stats?.documents ?? 0,
+    embeddedDocuments: stats?.embedded_documents ?? 0,
+    unembeddedDocuments: stats?.unembedded_documents ?? 0,
+    lastActivity: stats?.last_activity ?? null,
+    updateCommand: collection.update ?? null,
+  };
+}
+
+export function buildCollectionsModel(store: Store): AdminCollectionItem[] {
+  const stats = buildCollectionStatsMap(store);
+  return listCollections()
+    .map((collection) => toCollectionItem(collection, stats.get(collection.name)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function getCollectionDetail(store: Store, collectionId: string): AdminCollectionDetail | null {
+  const collection = getCollection(collectionId);
+  if (!collection) return null;
+  const stats = buildCollectionStatsMap(store);
+  return toCollectionItem(collection, stats.get(collection.name));
 }

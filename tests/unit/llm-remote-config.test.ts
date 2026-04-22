@@ -97,7 +97,7 @@ describe("remote LLM model selection", () => {
     expect((seenBody?.messages as { content: string }[])[0]?.content).toBe("test prompt");
   });
 
-  it("sends reasoning.effort only when CLAWMEM_LLM_REASONING_EFFORT is configured", async () => {
+  it("sends top-level reasoning_effort only when CLAWMEM_LLM_REASONING_EFFORT is configured", async () => {
     let seenBody: Record<string, unknown> | undefined;
     process.env.CLAWMEM_LLM_URL = "http://localhost:8089";
     process.env.CLAWMEM_LLM_MODEL = "gpt-5.4-mini";
@@ -115,7 +115,8 @@ describe("remote LLM model selection", () => {
     await llm.generate("test prompt");
 
     expect(seenBody?.model).toBe("gpt-5.4-mini");
-    expect(seenBody?.reasoning).toEqual({ effort: "minimal" });
+    expect(seenBody?.reasoning_effort).toBe("minimal");
+    expect(seenBody?.reasoning).toBeUndefined();
   });
 
   it("accepts 'none' as a reasoning effort override", async () => {
@@ -136,7 +137,7 @@ describe("remote LLM model selection", () => {
     await llm.generate("test prompt");
 
     expect(seenBody?.model).toBe("gpt-5.4-mini");
-    expect(seenBody?.reasoning).toEqual({ effort: "none" });
+    expect(seenBody?.reasoning_effort).toBe("none");
   });
 
   it("accepts 'xhigh' as a reasoning effort override", async () => {
@@ -157,6 +158,6 @@ describe("remote LLM model selection", () => {
     await llm.generate("test prompt");
 
     expect(seenBody?.model).toBe("gpt-5.4-mini");
-    expect(seenBody?.reasoning).toEqual({ effort: "xhigh" });
+    expect(seenBody?.reasoning_effort).toBe("xhigh");
   });
 });

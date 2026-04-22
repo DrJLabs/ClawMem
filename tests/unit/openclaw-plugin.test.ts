@@ -144,6 +144,20 @@ describe("plugin manifest (§14.3 kind=memory)", () => {
     expect(content.configSchema.properties.tokenBudget).toBeDefined();
     expect(content.configSchema.properties.profile).toBeDefined();
   });
+
+  test("openclaw.plugin.json exposes gpuLlmModel in uiHints and configSchema", async () => {
+    const file = Bun.file(`${import.meta.dir}/../../src/openclaw/openclaw.plugin.json`);
+    const content = await file.json();
+    expect(content.uiHints.gpuLlmModel).toBeDefined();
+    expect(content.configSchema.properties.gpuLlmModel).toBeDefined();
+  });
+
+  test("openclaw index maps gpuLlmModel to CLAWMEM_LLM_MODEL", async () => {
+    const file = Bun.file(`${import.meta.dir}/../../src/openclaw/index.ts`);
+    const content = await file.text();
+    expect(content).toContain("pluginCfg.gpuLlmModel");
+    expect(content).toContain("CLAWMEM_LLM_MODEL");
+  });
 });
 
 // =============================================================================
@@ -936,6 +950,7 @@ describe("Shipping Condition 2 — setup-time migration text is present", () => 
     // pattern, which failed on v2026.4.11 because the slot validator rejected
     // unregistered plugin ids.
     expect(content).toContain("openclaw plugins enable clawmem");
+    expect(content).toContain("plugins.entries.clawmem.config.gpuLlmModel");
     // Dreaming-disable note is also non-negotiable per §14.9
     expect(content).toContain("dreaming.enabled = false");
   });

@@ -41,6 +41,12 @@
       "help": "URL for ClawMem LLM (query expansion, extraction)",
       "advanced": true
     },
+    "gpuLlmModel": {
+      "label": "LLM Model",
+      "placeholder": "qwen3",
+      "help": "Model name sent to the configured LLM endpoint",
+      "advanced": true
+    },
     "gpuRerank": {
       "label": "Reranker Endpoint",
       "placeholder": "http://localhost:8090",
@@ -76,6 +82,9 @@
         "type": "string"
       },
       "gpuLlm": {
+        "type": "string"
+      },
+      "gpuLlmModel": {
         "type": "string"
       },
       "gpuRerank": {

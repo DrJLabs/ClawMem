@@ -1,0 +1,24 @@
+:root {
+  color-scheme: dark;
+  --font-sans: "IBM Plex Sans", "Inter", "Segoe UI", sans-serif;
+  --color-bg: #0b1020;
+  --color-surface: #121a30;
+  --color-surface-strong: #17213d;
+  --color-border: #283657;
+  --color-border-strong: #385186;
+  --color-text: #f5f7ff;
+  --color-text-muted: #9cabd1;
+  --color-accent: #63d3ff;
+  --color-accent-strong: #8df0c1;
+  --color-nav-active: #1f2d4c;
+  --shadow-panel: 0 18px 40px rgba(0, 0, 0, 0.24);
+  --radius-card: 20px;
+  --radius-pill: 999px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+}

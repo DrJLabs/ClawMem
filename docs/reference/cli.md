@@ -151,6 +151,9 @@ The session ID is resolved from `--session-id <id>`, then `CLAUDE_SESSION_ID`, t
 | `CLAWMEM_EMBED_TPM_LIMIT` | `100000` | Tokens-per-minute limit for cloud embedding pacing |
 | `CLAWMEM_EMBED_DIMENSIONS` | — | Output dimensions for OpenAI `text-embedding-3-*` models |
 | `CLAWMEM_LLM_URL` | `http://localhost:8089` | LLM server |
+| `CLAWMEM_LLM_MODEL` | `qwen3` | Model name sent to the configured LLM endpoint |
+| `CLAWMEM_LLM_REASONING_EFFORT` | — | Optional reasoning effort sent to supporting remote endpoints (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) |
+| `CLAWMEM_LLM_NO_THINK` | `true` | Append `/no_think` to remote prompts; set `false` for endpoints that reject it |
 | `CLAWMEM_RERANK_URL` | `http://localhost:8090` | Reranker server |
 | `CLAWMEM_NO_LOCAL_MODELS` | `false` | Block node-llama-cpp auto-downloads |
 | `CLAWMEM_PROFILE` | `balanced` | Performance profile: `speed` (BM25 only), `balanced` (BM25+vector), `deep` (BM25+vector+expansion+reranking) |

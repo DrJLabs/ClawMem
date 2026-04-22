@@ -15,6 +15,7 @@ Config via environment variables:
   CLAWMEM_PROFILE       — Retrieval profile: speed, balanced, deep (default: balanced)
   CLAWMEM_EMBED_URL     — GPU embedding server URL (optional)
   CLAWMEM_LLM_URL       — GPU LLM server URL (optional)
+  CLAWMEM_LLM_MODEL     — Model name sent to the GPU/cloud LLM endpoint (optional)
   CLAWMEM_RERANK_URL    — GPU reranker server URL (optional)
 
 Agent-context isolation:
@@ -295,6 +296,12 @@ class ClawMemProvider(MemoryProvider):
                 "secret": False,
                 "env_var": "CLAWMEM_LLM_URL",
             },
+            {
+                "key": "llm_model",
+                "description": "Model name sent to the GPU LLM server (e.g., qwen3, gpt-5.4-mini)",
+                "secret": False,
+                "env_var": "CLAWMEM_LLM_MODEL",
+            },
         ]
 
     # -- Core lifecycle --------------------------------------------------------
@@ -324,7 +331,7 @@ class ClawMemProvider(MemoryProvider):
             )
 
         # Build env for hook shell-outs (GPU endpoints, profile)
-        for var in ("CLAWMEM_EMBED_URL", "CLAWMEM_LLM_URL", "CLAWMEM_RERANK_URL", "CLAWMEM_PROFILE"):
+        for var in ("CLAWMEM_EMBED_URL", "CLAWMEM_LLM_URL", "CLAWMEM_LLM_MODEL", "CLAWMEM_RERANK_URL", "CLAWMEM_PROFILE"):
             val = os.environ.get(var)
             if val:
                 self._env_extra[var] = val

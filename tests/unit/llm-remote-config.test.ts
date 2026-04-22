@@ -1,0 +1,162 @@
+import { afterEach, describe, expect, it } from "bun:test";
+
+import {
+  disposeDefaultLlamaCpp,
+  getDefaultLlamaCpp,
+  LlamaCpp,
+  setDefaultLlamaCpp,
+} from "../../src/llm.ts";
+
+const originalFetch = globalThis.fetch;
+
+describe("remote LLM model selection", () => {
+  afterEach(async () => {
+    globalThis.fetch = originalFetch;
+    delete process.env.CLAWMEM_LLM_URL;
+    delete process.env.CLAWMEM_LLM_MODEL;
+    delete process.env.CLAWMEM_LLM_NO_THINK;
+    delete process.env.CLAWMEM_LLM_REASONING_EFFORT;
+    setDefaultLlamaCpp(null);
+    await disposeDefaultLlamaCpp();
+  });
+
+  it("defaults remote chat completions to qwen3 when no model override is set", async () => {
+    let seenBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "ok" } }],
+        model: seenBody.model,
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const llm = new LlamaCpp({ remoteLlmUrl: "http://localhost:8089" });
+    await llm.generate("test prompt");
+
+    expect(seenBody?.model).toBe("qwen3");
+    expect((seenBody?.messages as { content: string }[])[0]?.content).toContain("/no_think");
+  });
+
+  it("uses remoteLlmModel when the override is configured on the instance", async () => {
+    let seenBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "ok" } }],
+        model: seenBody.model,
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const llm = new LlamaCpp({
+      remoteLlmUrl: "http://localhost:8089",
+      remoteLlmModel: "gpt-5.4-mini",
+    });
+
+    const result = await llm.generate("test prompt");
+    expect(seenBody?.model).toBe("gpt-5.4-mini");
+    expect(result?.model).toBe("gpt-5.4-mini");
+  });
+
+  it("uses CLAWMEM_LLM_MODEL when bootstrapping the default LLM instance from env", async () => {
+    let seenBody: Record<string, unknown> | undefined;
+    process.env.CLAWMEM_LLM_URL = "http://localhost:8089";
+    process.env.CLAWMEM_LLM_MODEL = "gpt-5.4-mini";
+
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "ok" } }],
+        model: seenBody.model,
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const llm = getDefaultLlamaCpp();
+    await llm.generate("test prompt");
+
+    expect(seenBody?.model).toBe("gpt-5.4-mini");
+  });
+
+  it("omits /no_think when CLAWMEM_LLM_NO_THINK disables it", async () => {
+    let seenBody: Record<string, unknown> | undefined;
+    process.env.CLAWMEM_LLM_URL = "http://localhost:8089";
+    process.env.CLAWMEM_LLM_MODEL = "gpt-5.4-mini";
+    process.env.CLAWMEM_LLM_NO_THINK = "false";
+
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "ok" } }],
+        model: seenBody.model,
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const llm = getDefaultLlamaCpp();
+    await llm.generate("test prompt");
+
+    expect(seenBody?.model).toBe("gpt-5.4-mini");
+    expect((seenBody?.messages as { content: string }[])[0]?.content).toBe("test prompt");
+  });
+
+  it("sends reasoning.effort only when CLAWMEM_LLM_REASONING_EFFORT is configured", async () => {
+    let seenBody: Record<string, unknown> | undefined;
+    process.env.CLAWMEM_LLM_URL = "http://localhost:8089";
+    process.env.CLAWMEM_LLM_MODEL = "gpt-5.4-mini";
+    process.env.CLAWMEM_LLM_REASONING_EFFORT = "minimal";
+
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "ok" } }],
+        model: seenBody.model,
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const llm = getDefaultLlamaCpp();
+    await llm.generate("test prompt");
+
+    expect(seenBody?.model).toBe("gpt-5.4-mini");
+    expect(seenBody?.reasoning).toEqual({ effort: "minimal" });
+  });
+
+  it("accepts 'none' as a reasoning effort override", async () => {
+    let seenBody: Record<string, unknown> | undefined;
+    process.env.CLAWMEM_LLM_URL = "http://localhost:8089";
+    process.env.CLAWMEM_LLM_MODEL = "gpt-5.4-mini";
+    process.env.CLAWMEM_LLM_REASONING_EFFORT = "none";
+
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "ok" } }],
+        model: seenBody.model,
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const llm = getDefaultLlamaCpp();
+    await llm.generate("test prompt");
+
+    expect(seenBody?.model).toBe("gpt-5.4-mini");
+    expect(seenBody?.reasoning).toEqual({ effort: "none" });
+  });
+
+  it("accepts 'xhigh' as a reasoning effort override", async () => {
+    let seenBody: Record<string, unknown> | undefined;
+    process.env.CLAWMEM_LLM_URL = "http://localhost:8089";
+    process.env.CLAWMEM_LLM_MODEL = "gpt-5.4-mini";
+    process.env.CLAWMEM_LLM_REASONING_EFFORT = "xhigh";
+
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "ok" } }],
+        model: seenBody.model,
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const llm = getDefaultLlamaCpp();
+    await llm.generate("test prompt");
+
+    expect(seenBody?.model).toBe("gpt-5.4-mini");
+    expect(seenBody?.reasoning).toEqual({ effort: "xhigh" });
+  });
+});

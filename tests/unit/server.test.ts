@@ -14,6 +14,7 @@ let store: Store;
 let server: ReturnType<typeof startServer>;
 let authDocHash: string;
 let handoffDocHash: string;
+let feedDocId: number;
 const TEST_DB = "/tmp/clawmem-server-test.sqlite";
 const TEST_CONFIG_DIR = "/tmp/clawmem-server-config";
 const TEST_UI_DIST = "/tmp/clawmem-server-ui-dist";
@@ -69,10 +70,15 @@ beforeAll(() => {
   const feedHash = hashContent(feedBody);
   store.insertContent(feedHash, feedBody, now);
   store.insertDocument("_clawmem", "observations/2026-04-22-snapshot.md", "Snapshot backup completed successfully", feedHash, now, now);
-  store.updateDocumentMeta(4, { content_type: "milestone", confidence: 0.9 });
+  const feedDoc = store.findActiveDocument("_clawmem", "observations/2026-04-22-snapshot.md");
+  if (!feedDoc) {
+    throw new Error("Failed to retrieve inserted _clawmem feed document");
+  }
+  feedDocId = feedDoc.id;
+  store.updateDocumentMeta(feedDocId, { content_type: "milestone", confidence: 0.9 });
   store.db.prepare(
     "UPDATE documents SET narrative = ?, source_doc_ids = ? WHERE id = ?",
-  ).run("Snapshot backup completed without errors.", JSON.stringify([1, 2]), 4);
+  ).run("Snapshot backup completed without errors.", JSON.stringify([1, 2]), feedDocId);
 
   server = startServer(store, PORT);
 });
@@ -223,6 +229,14 @@ describe("GET /admin/overview", () => {
     expect(data.health).toBeDefined();
     expect(data.backlog).toBeDefined();
     expect(data.lanes).toBeDefined();
+  });
+
+  test("includes CORS headers on admin responses", async () => {
+    const res = await fetch(`${BASE}/admin/overview`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("http://localhost:*");
+    expect(res.headers.get("Access-Control-Allow-Methods")).toContain("PATCH");
+    expect(res.headers.get("Access-Control-Allow-Headers")).toContain("Authorization");
   });
 });
 

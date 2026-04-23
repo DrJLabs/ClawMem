@@ -6,53 +6,53 @@ import { api } from "../lib/api";
 
 export function CollectionDetailPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
-  const decodedCollectionId = collectionId ?? null;
+  const selectedCollectionId = collectionId ?? null;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   const collection = useQuery({
-    queryKey: ["collections", decodedCollectionId],
-    queryFn: () => api.getCollection(decodedCollectionId!),
-    enabled: decodedCollectionId !== null,
+    queryKey: ["collections", selectedCollectionId],
+    queryFn: () => api.getCollection(selectedCollectionId!),
+    enabled: selectedCollectionId !== null,
     refetchInterval: 15000,
   });
 
   const updateCollection = useMutation({
     mutationFn: (body: { path: string; pattern: string }) =>
-      api.updateCollection(decodedCollectionId!, body),
+      api.updateCollection(selectedCollectionId!, body),
     onSuccess: async (result) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["collections"] }),
-        queryClient.setQueryData(["collections", decodedCollectionId], result),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: ["collections"] });
+      queryClient.setQueryData(["collections", selectedCollectionId], result);
     },
   });
 
   const deleteCollection = useMutation({
-    mutationFn: () => api.deleteCollection(decodedCollectionId!),
+    mutationFn: () => api.deleteCollection(selectedCollectionId!),
     onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: ["collections", selectedCollectionId] });
       await queryClient.invalidateQueries({ queryKey: ["collections"] });
       navigate("/collections");
     },
   });
 
   const queueReindex = useMutation({
-    mutationFn: () => api.queueReindex({ collection: decodedCollectionId }),
+    mutationFn: () => api.queueReindex({ collection: selectedCollectionId }),
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!decodedCollectionId) return;
+    if (!selectedCollectionId) return;
     const formData = new FormData(event.currentTarget);
     const nextRoot = String(formData.get("root") ?? "").trim();
     const nextPattern = String(formData.get("pattern") ?? "").trim();
+    if (!nextRoot || !nextPattern) return;
     updateCollection.mutate({
       path: nextRoot,
       pattern: nextPattern,
     });
   }
 
-  if (!decodedCollectionId) {
+  if (!selectedCollectionId) {
     return (
       <Panel title="Collection detail" description="No collection identifier was provided.">
         <p>Collection not found.</p>

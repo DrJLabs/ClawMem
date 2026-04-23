@@ -255,6 +255,13 @@ describe("GET /admin/logs", () => {
     const data = await res.json() as any;
     expect(data.error).toContain("since");
   });
+
+  test("accepts relative since values supported by journalctl", async () => {
+    const res = await fetch(`${BASE}/admin/logs?since=1%20hour%20ago`);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(Array.isArray(data.items)).toBe(true);
+  });
 });
 
 describe("GET/POST/PATCH/DELETE /admin/collections", () => {
@@ -363,6 +370,30 @@ describe("GET/POST/PATCH/DELETE /admin/collections", () => {
     expect(blankPatchRes.status).toBe(400);
   });
 
+  test("rejects sensitive collection roots", async () => {
+    const createRes = await fetch(`${BASE}/admin/collections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "etc-root",
+        path: "/etc",
+      }),
+    });
+    expect(createRes.status).toBe(400);
+    expect((await createRes.json() as any).error).toContain("not allowed");
+
+    addCollection("sensitive-root", TEST_VALID_COLLECTION_DIR, "**/*.md");
+    const patchRes = await fetch(`${BASE}/admin/collections/sensitive-root`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: "/etc",
+      }),
+    });
+    expect(patchRes.status).toBe(400);
+    expect((await patchRes.json() as any).error).toContain("not allowed");
+  });
+
   test("delete removes database documents and config entry for the collection", async () => {
     const now = new Date().toISOString();
     const tempBody = "# Operator Notes\n\nThis collection should be deleted from the database.";
@@ -387,6 +418,34 @@ describe("GET/POST/PATCH/DELETE /admin/collections", () => {
     const afterData = await after.json() as any;
     expect(afterData.documents.some((doc: any) => doc.collection === "temp-delete")).toBe(false);
     expect(getCollection("temp-delete")).toBeNull();
+  });
+
+  test("delete preserves content still referenced by archived documents", async () => {
+    const now = new Date().toISOString();
+    const sharedBody = "# Shared Note\n\nThis content is reused by an archived doc.";
+    const sharedHash = hashContent(sharedBody);
+    store.insertContent(sharedHash, sharedBody, now);
+    store.insertDocument("temp-delete-archived", "notes/active.md", "Active Shared", sharedHash, now, now);
+    store.insertDocument("archive-holder", "notes/archived.md", "Archived Shared", sharedHash, now, now);
+    store.db.prepare("UPDATE documents SET active = 0, archived_at = ? WHERE collection = ?").run(now, "archive-holder");
+
+    addCollection("temp-delete-archived", TEST_VALID_COLLECTION_DIR, "**/*.md");
+
+    const deleteRes = await fetch(`${BASE}/admin/collections/temp-delete-archived`, {
+      method: "DELETE",
+    });
+    expect(deleteRes.status).toBe(200);
+
+    const contentRow = store.db.prepare("SELECT hash FROM content WHERE hash = ?").get(sharedHash);
+    expect(contentRow).toBeDefined();
+
+    const archivedRow = store.db.prepare(`
+      SELECT c.doc as body
+      FROM documents d
+      JOIN content c ON c.hash = d.hash
+      WHERE d.collection = ? AND d.path = ?
+    `).get("archive-holder", "notes/archived.md") as { body: string } | undefined;
+    expect(archivedRow?.body).toContain("reused by an archived doc");
   });
 });
 

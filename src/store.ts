@@ -2939,8 +2939,11 @@ export function removeCollection(db: Database, collectionName: string): { delete
   // Clean up orphaned content hashes
   const cleanupResult = db.prepare(`
     DELETE FROM content
-    WHERE hash NOT IN (SELECT DISTINCT hash FROM documents WHERE active = 1)
+    WHERE hash NOT IN (SELECT DISTINCT hash FROM documents)
   `).run();
+
+  // Drop embeddings that no longer belong to any active document.
+  cleanStaleEmbeddings(db);
 
   // Remove from YAML config (returns true if found and removed)
   collectionsRemoveCollection(collectionName);

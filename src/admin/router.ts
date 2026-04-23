@@ -33,13 +33,23 @@ async function parseJsonBody<T>(req: Request): Promise<{ ok: true; body: T | nul
   }
 }
 
-function normalizeCollectionPath(input: string): string | null {
+function normalizeCollectionPath(input: string): { path: string | null; error: string } {
   const absPath = pathResolve(input);
-  if (!existsSync(absPath)) return null;
+  const deniedPrefixes = ["/etc", "/root", "/var", "/proc", "/sys", "/dev"];
+  const deniedPatterns = [".ssh", ".gnupg", ".env", "credentials", "secrets", ".aws", ".kube"];
+  if (deniedPrefixes.some((prefix) => absPath === prefix || absPath.startsWith(`${prefix}/`))) {
+    return { path: null, error: `Directory not allowed: ${absPath}` };
+  }
+  if (deniedPatterns.some((pattern) => absPath.toLowerCase().includes(pattern.toLowerCase()))) {
+    return { path: null, error: `Directory not allowed: ${absPath}` };
+  }
+  if (!existsSync(absPath)) return { path: null, error: `Directory not found: ${absPath}` };
   try {
-    return statSync(absPath).isDirectory() ? absPath : null;
+    return statSync(absPath).isDirectory()
+      ? { path: absPath, error: "" }
+      : { path: null, error: `Directory not found: ${absPath}` };
   } catch {
-    return null;
+    return { path: null, error: `Directory not found: ${absPath}` };
   }
 }
 
@@ -86,8 +96,15 @@ async function loadLifecyclePolicy(dryRun: boolean) {
 
 function normalizeSinceQuery(input: string | null): string | null {
   if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
   const parsed = new Date(input);
-  return Number.isNaN(parsed.getTime()) ? null : input;
+  if (!Number.isNaN(parsed.getTime())) {
+    return trimmed;
+  }
+
+  const journalctlRelativePattern = /^(?:\d+\s+(?:second|minute|hour|day|week|month|year)s?\s+ago|yesterday|today|now|last\s+\w+|this\s+\w+)$/i;
+  return journalctlRelativePattern.test(trimmed) ? trimmed : null;
 }
 
 function isValidTimestamp(input: string): boolean {
@@ -210,12 +227,12 @@ export function createAdminRoutes(store: Store): AdminRoute[] {
           return Response.json({ error: `Collection already exists: ${name}` }, { status: 409 });
         }
 
-        const path = normalizeCollectionPath(rawPath);
-        if (!path) {
-          return Response.json({ error: `Directory not found: ${pathResolve(rawPath)}` }, { status: 400 });
+        const normalizedPath = normalizeCollectionPath(rawPath);
+        if (!normalizedPath.path) {
+          return Response.json({ error: normalizedPath.error }, { status: 400 });
         }
 
-        addCollection(name, path, pattern);
+        addCollection(name, normalizedPath.path, pattern);
         return Response.json({ item: getCollectionDetail(store, name) }, { status: 201 });
       },
     },
@@ -257,14 +274,11 @@ export function createAdminRoutes(store: Store): AdminRoute[] {
             return Response.json({ error: "path must not be empty" }, { status: 400 });
           }
 
-          const path = normalizeCollectionPath(trimmedPath);
-          if (!path) {
-            return Response.json(
-              { error: `Directory not found: ${pathResolve(trimmedPath)}` },
-              { status: 400 },
-            );
+          const normalizedPath = normalizeCollectionPath(trimmedPath);
+          if (!normalizedPath.path) {
+            return Response.json({ error: normalizedPath.error }, { status: 400 });
           }
-          patch.path = path;
+          patch.path = normalizedPath.path;
         }
         if (typeof parsed.body?.pattern === "string" && parsed.body.pattern.trim().length > 0) {
           patch.pattern = parsed.body.pattern.trim();

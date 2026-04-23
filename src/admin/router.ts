@@ -11,7 +11,7 @@ import {
   getRunDetail,
 } from "./service.ts";
 import { queueReindexJob } from "./jobs.ts";
-import { getWatcherSnapshot } from "./runtime.ts";
+import { getWatcherSnapshot, queryWatcherLogs } from "./runtime.ts";
 
 export type AdminRoute = {
   method: string;
@@ -50,6 +50,30 @@ function getRouteId(url: URL): string | null {
   } catch {
     return id;
   }
+}
+
+function getAdminDocumentId(url: URL): string | null {
+  const id = url.pathname.split("/")[3];
+  return id ? decodeURIComponent(id) : null;
+}
+
+function resolveActiveDocument(store: Store, docid: string) {
+  return store.db.prepare(
+    "SELECT id, collection, path FROM documents WHERE hash LIKE ? AND active = 1 ORDER BY id LIMIT 1",
+  ).get(`${docid.startsWith("#") ? docid.slice(1) : docid}%`) as { id: number; collection: string; path: string } | undefined;
+}
+
+async function loadLifecyclePolicy(dryRun: boolean) {
+  const { loadVaultConfig } = await import("../config.ts");
+  const config = loadVaultConfig();
+  return config.lifecycle
+    ?? { archive_after_days: 90, type_overrides: {}, purge_after_days: null, exempt_collections: [], dry_run: dryRun };
+}
+
+function normalizeSinceQuery(input: string | null): string | null {
+  if (!input) return null;
+  const parsed = new Date(input);
+  return Number.isNaN(parsed.getTime()) ? null : input;
 }
 
 function getHeavyLaneWindow() {
@@ -91,6 +115,23 @@ export function createAdminRoutes(store: Store): AdminRoute[] {
         const rawLimit = Number(url.searchParams.get("limit") ?? "25");
         const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100) : 25;
         return Response.json({ items: buildMemoryFeedModel(store, limit) });
+      },
+    },
+    {
+      method: "GET",
+      pattern: /^\/admin\/logs$/,
+      handler: async (_req: Request, url: URL) => {
+        const rawLimit = Number(url.searchParams.get("limit") ?? "200");
+        const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 500) : 200;
+        const rawLevel = url.searchParams.get("level");
+        const level = rawLevel === "err" || rawLevel === "warn" || rawLevel === "info" ? rawLevel : undefined;
+        const rawSince = url.searchParams.get("since");
+        const since = normalizeSinceQuery(rawSince);
+        if (rawSince && !since) {
+          return Response.json({ error: "since must be a valid timestamp" }, { status: 400 });
+        }
+        const items = await queryWatcherLogs({ limit, since, priority: level });
+        return Response.json({ items });
       },
     },
     {
@@ -160,11 +201,16 @@ export function createAdminRoutes(store: Store): AdminRoute[] {
         }
 
         const patch: { path?: string; pattern?: string } = {};
-        if (typeof parsed.body?.path === "string" && parsed.body.path.trim().length > 0) {
-          const path = normalizeCollectionPath(parsed.body.path.trim());
+        if (typeof parsed.body?.path === "string") {
+          const trimmedPath = parsed.body.path.trim();
+          if (trimmedPath.length === 0) {
+            return Response.json({ error: "path must not be empty" }, { status: 400 });
+          }
+
+          const path = normalizeCollectionPath(trimmedPath);
           if (!path) {
             return Response.json(
-              { error: `Directory not found: ${pathResolve(parsed.body.path.trim())}` },
+              { error: `Directory not found: ${pathResolve(trimmedPath)}` },
               { status: 400 },
             );
           }
@@ -224,6 +270,132 @@ export function createAdminRoutes(store: Store): AdminRoute[] {
         }
 
         return Response.json({ item });
+      },
+    },
+    {
+      method: "POST",
+      pattern: /^\/admin\/lifecycle\/sweep$/,
+      handler: async (req: Request) => {
+        const parsed = await parseJsonBody<{ dry_run?: boolean; confirm?: string }>(req);
+        if (!parsed.ok) {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+
+        const dryRun = parsed.body?.dry_run ?? true;
+        if (!dryRun && parsed.body?.confirm !== "ARCHIVE") {
+          return Response.json({ error: "confirm must equal ARCHIVE for destructive lifecycle sweeps" }, { status: 400 });
+        }
+        const policy = await loadLifecyclePolicy(dryRun);
+        const candidates = store.getArchiveCandidates(policy);
+
+        if (dryRun) {
+          return Response.json({
+            dry_run: true,
+            candidates: candidates.length,
+            documents: candidates.map((item) => ({
+              id: item.id,
+              path: `${item.collection}/${item.path}`,
+              title: item.title,
+              content_type: item.content_type,
+              modified_at: item.modified_at,
+              last_accessed_at: item.last_accessed_at,
+            })),
+          });
+        }
+
+        const archived = store.archiveDocuments(candidates.map((candidate) => candidate.id));
+        return Response.json({ dry_run: false, archived });
+      },
+    },
+    {
+      method: "POST",
+      pattern: /^\/admin\/lifecycle\/restore$/,
+      handler: async (req: Request) => {
+        const parsed = await parseJsonBody<{ collection?: string }>(req);
+        if (!parsed.ok) {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+
+        const restored = store.restoreArchivedDocuments(
+          parsed.body?.collection ? { collection: parsed.body.collection } : {},
+        );
+        return Response.json({ restored });
+      },
+    },
+    {
+      method: "POST",
+      pattern: /^\/admin\/documents\/([^/]+)\/pin$/,
+      handler: async (req: Request, url: URL) => {
+        const docid = getAdminDocumentId(url);
+        if (!docid) {
+          return Response.json({ error: "docid is required" }, { status: 400 });
+        }
+
+        const parsed = await parseJsonBody<{ unpin?: boolean }>(req);
+        if (!parsed.ok) {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+
+        const doc = resolveActiveDocument(store, docid);
+        if (!doc) {
+          return Response.json({ error: `Document not found: ${docid}` }, { status: 404 });
+        }
+
+        const unpin = parsed.body?.unpin ?? false;
+        store.pinDocument(doc.collection, doc.path, !unpin);
+        return Response.json({ docid, pinned: !unpin });
+      },
+    },
+    {
+      method: "POST",
+      pattern: /^\/admin\/documents\/([^/]+)\/snooze$/,
+      handler: async (req: Request, url: URL) => {
+        const docid = getAdminDocumentId(url);
+        if (!docid) {
+          return Response.json({ error: "docid is required" }, { status: 400 });
+        }
+
+        const parsed = await parseJsonBody<{ until?: string; unsnooze?: boolean }>(req);
+        if (!parsed.ok) {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+
+        const doc = resolveActiveDocument(store, docid);
+        if (!doc) {
+          return Response.json({ error: `Document not found: ${docid}` }, { status: 404 });
+        }
+
+        const until = parsed.body?.unsnooze
+          ? null
+          : (parsed.body?.until ?? new Date(Date.now() + 30 * 86400000).toISOString());
+        store.snoozeDocument(doc.collection, doc.path, until);
+        return Response.json({ docid, snoozed: !parsed.body?.unsnooze, until });
+      },
+    },
+    {
+      method: "POST",
+      pattern: /^\/admin\/documents\/([^/]+)\/forget$/,
+      handler: async (req: Request, url: URL) => {
+        const docid = getAdminDocumentId(url);
+        if (!docid) {
+          return Response.json({ error: "docid is required" }, { status: 400 });
+        }
+
+        const parsed = await parseJsonBody<{ confirm?: string }>(req);
+        if (!parsed.ok) {
+          return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+        }
+        if (parsed.body?.confirm !== "FORGET") {
+          return Response.json({ error: "confirm must equal FORGET for document deactivation" }, { status: 400 });
+        }
+
+        const doc = resolveActiveDocument(store, docid);
+        if (!doc) {
+          return Response.json({ error: `Document not found: ${docid}` }, { status: 404 });
+        }
+
+        store.deactivateDocument(doc.collection, doc.path);
+        return Response.json({ docid, forgotten: true });
       },
     },
     {

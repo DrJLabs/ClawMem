@@ -3,12 +3,24 @@ import type {
   CollectionsResponse,
   CreateCollectionRequest,
   DeleteCollectionResponse,
+  ForgetDocumentRequest,
+  ForgetDocumentResponse,
+  JournalLogItem,
+  LifecycleRestoreRequest,
+  LifecycleRestoreResponse,
+  LifecycleSweepRequest,
+  LifecycleSweepResponse,
+  LogsResponse,
   MemoryFeedResponse,
   OverviewResponse,
+  PinDocumentRequest,
+  PinDocumentResponse,
   ReindexJobRequest,
   ReindexJobResponse,
   RunDetailResponse,
   RunsResponse,
+  SnoozeDocumentRequest,
+  SnoozeDocumentResponse,
   UpdateCollectionRequest,
 } from "./types";
 
@@ -89,6 +101,18 @@ function isRunItem(value: unknown): boolean {
     validSources.has(value.source) &&
     (typeof value.startedAt === "string" || value.startedAt === null) &&
     (typeof value.finishedAt === "string" || value.finishedAt === null)
+  );
+}
+
+function isLogItem(value: unknown): value is JournalLogItem {
+  const validLevels = new Set(["err", "warn", "info"]);
+  return (
+    isObject(value) &&
+    (typeof value.timestamp === "string" || value.timestamp === null) &&
+    typeof value.level === "string" &&
+    validLevels.has(value.level) &&
+    typeof value.source === "string" &&
+    typeof value.message === "string"
   );
 }
 
@@ -203,6 +227,53 @@ function assertRunDetailResponse(value: unknown): RunDetailResponse {
   return value as RunDetailResponse;
 }
 
+function assertLogsResponse(value: unknown): LogsResponse {
+  if (!isObject(value) || !Array.isArray(value.items) || value.items.some((item) => !isLogItem(item))) {
+    throw new Error("Invalid /admin/logs response");
+  }
+  return value as LogsResponse;
+}
+
+function assertLifecycleSweepResponse(value: unknown): LifecycleSweepResponse {
+  if (!isObject(value) || typeof value.dry_run !== "boolean") {
+    throw new Error("Invalid /admin/lifecycle/sweep response");
+  }
+  return value as LifecycleSweepResponse;
+}
+
+function assertLifecycleRestoreResponse(value: unknown): LifecycleRestoreResponse {
+  if (!isObject(value) || typeof value.restored !== "number") {
+    throw new Error("Invalid /admin/lifecycle/restore response");
+  }
+  return value as LifecycleRestoreResponse;
+}
+
+function assertPinDocumentResponse(value: unknown): PinDocumentResponse {
+  if (!isObject(value) || typeof value.docid !== "string" || typeof value.pinned !== "boolean") {
+    throw new Error("Invalid /admin/documents/:docid/pin response");
+  }
+  return value as PinDocumentResponse;
+}
+
+function assertSnoozeDocumentResponse(value: unknown): SnoozeDocumentResponse {
+  if (
+    !isObject(value) ||
+    typeof value.docid !== "string" ||
+    typeof value.snoozed !== "boolean" ||
+    (typeof value.until !== "string" && value.until !== null)
+  ) {
+    throw new Error("Invalid /admin/documents/:docid/snooze response");
+  }
+  return value as SnoozeDocumentResponse;
+}
+
+function assertForgetDocumentResponse(value: unknown): ForgetDocumentResponse {
+  if (!isObject(value) || typeof value.docid !== "string" || value.forgotten !== true) {
+    throw new Error("Invalid /admin/documents/:docid/forget response");
+  }
+  return value as ForgetDocumentResponse;
+}
+
 async function json(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
   const response = await fetch(input, {
     ...init,
@@ -239,6 +310,8 @@ export const api = {
     assertDeleteCollectionResponse(await json(`/admin/collections/${encodeURIComponent(collectionId)}`, {
       method: "DELETE",
     })),
+  getLogs: async (params?: URLSearchParams) =>
+    assertLogsResponse(await json(`/admin/logs${params && params.toString() ? `?${params.toString()}` : ""}`)),
   getRuns: async () => assertRunsResponse(await json("/admin/runs")),
   getRunDetail: async (runId: string) => assertRunDetailResponse(await json(`/admin/runs/${runId}`)),
   queueReindex: (body: ReindexJobRequest) =>
@@ -246,4 +319,29 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }).then(assertReindexJobResponse),
+  lifecycleSweep: (body: LifecycleSweepRequest) =>
+    json("/admin/lifecycle/sweep", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }).then(assertLifecycleSweepResponse),
+  lifecycleRestore: (body: LifecycleRestoreRequest) =>
+    json("/admin/lifecycle/restore", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }).then(assertLifecycleRestoreResponse),
+  pinDocument: (docid: string, body: PinDocumentRequest = {}) =>
+    json(`/admin/documents/${encodeURIComponent(docid)}/pin`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }).then(assertPinDocumentResponse),
+  snoozeDocument: (docid: string, body: SnoozeDocumentRequest = {}) =>
+    json(`/admin/documents/${encodeURIComponent(docid)}/snooze`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }).then(assertSnoozeDocumentResponse),
+  forgetDocument: (docid: string, body: ForgetDocumentRequest) =>
+    json(`/admin/documents/${encodeURIComponent(docid)}/forget`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }).then(assertForgetDocumentResponse),
 };

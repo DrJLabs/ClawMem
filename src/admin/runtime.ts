@@ -68,6 +68,27 @@ export type WatcherCommandResult = {
 
 export type WatcherCommandRunner = () => Promise<WatcherCommandResult>;
 
+export type WatcherLogQueryInput = {
+  priority?: "err" | "warn" | "info";
+  since?: string;
+  limit?: number;
+};
+
+export type WatcherLogQueryResult = {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+};
+
+export type WatcherLogQueryRunner = (input: WatcherLogQueryInput) => Promise<WatcherLogQueryResult>;
+
+function getPriorityRange(priority?: "err" | "warn" | "info"): string | null {
+  if (priority === "err") return "0..3";
+  if (priority === "warn") return "4..4";
+  if (priority === "info") return "5..7";
+  return null;
+}
+
 async function runSystemctlWatcherShow(): Promise<WatcherCommandResult> {
   const proc = Bun.spawn(["systemctl", "--user", "show", "clawmem-watcher.service"], {
     stdout: "pipe",
@@ -79,6 +100,67 @@ async function runSystemctlWatcherShow(): Promise<WatcherCommandResult> {
     proc.exited,
   ]);
   return { exitCode, stdout, stderr };
+}
+
+async function runWatcherLogQuery(input: WatcherLogQueryInput): Promise<WatcherLogQueryResult> {
+  const args = [
+    "journalctl",
+    "--user",
+    "-u",
+    "clawmem-watcher.service",
+    "--output=json",
+    "--no-pager",
+    "--lines",
+    String(input.limit ?? 200),
+  ];
+  if (input.since) {
+    args.push("--since", input.since);
+  }
+  const priorityRange = getPriorityRange(input.priority);
+  if (priorityRange) {
+    args.push("--priority", priorityRange);
+  }
+
+  const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  return { exitCode, stdout, stderr };
+}
+
+let watcherLogQueryRunner: WatcherLogQueryRunner = runWatcherLogQuery;
+
+export function setWatcherLogQueryRunnerForTests(runner: WatcherLogQueryRunner): void {
+  watcherLogQueryRunner = runner;
+}
+
+export function resetWatcherLogQueryRunnerForTests(): void {
+  watcherLogQueryRunner = runWatcherLogQuery;
+}
+
+export async function queryWatcherLogs(
+  input: WatcherLogQueryInput,
+  runQuery: WatcherLogQueryRunner = watcherLogQueryRunner,
+): Promise<JournalLogEntry[]> {
+  const result = await runQuery(input);
+  if (result.exitCode !== 0) {
+    return [{
+      timestamp: null,
+      level: "warn",
+      source: "journalctl",
+      message: result.stderr.trim() || `journalctl exited with code ${result.exitCode}`,
+    }];
+  }
+
+  const items = result.stdout
+    .split("\n")
+    .filter(Boolean)
+    .map(parseJournalJsonLine);
+
+  return input.priority ? items.filter((item) => item.level === input.priority) : items;
 }
 
 export async function getWatcherSnapshot(

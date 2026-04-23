@@ -8,6 +8,7 @@ import { createStore, type Store } from "../../src/store.ts";
 import { addCollection, saveConfig } from "../../src/collections.ts";
 import { hashContent } from "../../src/indexer.ts";
 import { startServer } from "../../src/server.ts";
+import { resetWatcherLogQueryRunnerForTests, setWatcherLogQueryRunnerForTests } from "../../src/admin/runtime.ts";
 
 let store: Store;
 let server: ReturnType<typeof startServer>;
@@ -88,6 +89,37 @@ afterAll(() => {
   rmSync(TEST_VALID_COLLECTION_DIR_2, { recursive: true, force: true });
   delete process.env.CLAWMEM_CONFIG_DIR;
   delete process.env.CLAWMEM_CONSOLE_DIST_DIR;
+});
+
+beforeAll(() => {
+  setWatcherLogQueryRunnerForTests(async () => ({
+    exitCode: 0,
+    stdout: [
+      JSON.stringify({
+        __REALTIME_TIMESTAMP: "1776864223000000",
+        PRIORITY: "3",
+        SYSLOG_IDENTIFIER: "clawmem-watcher",
+        MESSAGE: "watcher error",
+      }),
+      JSON.stringify({
+        __REALTIME_TIMESTAMP: "1776864224000000",
+        PRIORITY: "4",
+        SYSLOG_IDENTIFIER: "clawmem-watcher",
+        MESSAGE: "watcher warning",
+      }),
+      JSON.stringify({
+        __REALTIME_TIMESTAMP: "1776864225000000",
+        PRIORITY: "6",
+        SYSLOG_IDENTIFIER: "clawmem-watcher",
+        MESSAGE: "watcher info",
+      }),
+    ].join("\n"),
+    stderr: "",
+  }));
+});
+
+afterAll(() => {
+  resetWatcherLogQueryRunnerForTests();
 });
 
 describe("GET /health", () => {
@@ -206,6 +238,25 @@ describe("GET /admin/memory-feed", () => {
   });
 });
 
+describe("GET /admin/logs", () => {
+  test("returns watcher logs filtered by severity", async () => {
+    const res = await fetch(`${BASE}/admin/logs?level=warn&limit=20`);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(Array.isArray(data.items)).toBe(true);
+    expect(data.items).toHaveLength(1);
+    expect(data.items[0].level).toBe("warn");
+    expect(data.items[0].message).toContain("warning");
+  });
+
+  test("rejects invalid since values", async () => {
+    const res = await fetch(`${BASE}/admin/logs?since=not-a-date`);
+    expect(res.status).toBe(400);
+    const data = await res.json() as any;
+    expect(data.error).toContain("since");
+  });
+});
+
 describe("GET/POST/PATCH/DELETE /admin/collections", () => {
   test("lists configured collections with stable fields", async () => {
     const res = await fetch(`${BASE}/admin/collections`);
@@ -301,6 +352,15 @@ describe("GET/POST/PATCH/DELETE /admin/collections", () => {
       }),
     });
     expect(filePatchRes.status).toBe(400);
+
+    const blankPatchRes = await fetch(`${BASE}/admin/collections/configured`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: "   ",
+      }),
+    });
+    expect(blankPatchRes.status).toBe(400);
   });
 
   test("delete removes database documents for the collection", async () => {
@@ -445,6 +505,103 @@ describe("POST /documents/:docid/pin", () => {
     expect(res.status).toBe(200);
     const data = await res.json() as any;
     expect(data.pinned).toBe(true);
+  });
+});
+
+describe("POST /admin document and lifecycle mutations", () => {
+  test("wraps pin and snooze mutations under /admin", async () => {
+    const docid = authDocHash.slice(0, 6);
+
+    const pinRes = await fetch(`${BASE}/admin/documents/${docid}/pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(pinRes.status).toBe(200);
+    expect((await pinRes.json() as any).pinned).toBe(true);
+
+    const snoozeRes = await fetch(`${BASE}/admin/documents/${docid}/snooze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ until: "2026-05-01T00:00:00.000Z" }),
+    });
+    expect(snoozeRes.status).toBe(200);
+    const snoozed = await snoozeRes.json() as any;
+    expect(snoozed.snoozed).toBe(true);
+    expect(snoozed.until).toBe("2026-05-01T00:00:00.000Z");
+  });
+
+  test("forgets a document and restores archived documents through admin endpoints", async () => {
+    const now = new Date().toISOString();
+    store.db.prepare("UPDATE documents SET active = 0, archived_at = ? WHERE hash = ?").run(now, handoffDocHash);
+
+    const restoreRes = await fetch(`${BASE}/admin/lifecycle/restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collection: "test" }),
+    });
+    expect(restoreRes.status).toBe(200);
+    expect((await restoreRes.json() as any).restored).toBeGreaterThanOrEqual(1);
+    const restoredRow = store.db.prepare("SELECT active, archived_at FROM documents WHERE hash = ?").get(handoffDocHash) as {
+      active: number;
+      archived_at: string | null;
+    };
+    expect(restoredRow.active).toBe(1);
+    expect(restoredRow.archived_at).toBeNull();
+
+    const tempBody = "# Forget me\n\nThis document will be forgotten.";
+    const tempHash = hashContent(tempBody);
+    store.insertContent(tempHash, tempBody, now);
+    store.insertDocument("forget-target", "notes/forget-me.md", "Forget me", tempHash, now, now);
+    const tempDocid = tempHash.slice(0, 6);
+
+    const forgetRejected = await fetch(`${BASE}/admin/documents/${tempDocid}/forget`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(forgetRejected.status).toBe(400);
+
+    const forgetRes = await fetch(`${BASE}/admin/documents/${tempDocid}/forget`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: "FORGET" }),
+    });
+    expect(forgetRes.status).toBe(200);
+    expect((await forgetRes.json() as any).forgotten).toBe(true);
+
+    const docRow = store.db.prepare("SELECT active FROM documents WHERE hash = ?").get(tempHash) as { active: number };
+    expect(docRow.active).toBe(0);
+  });
+
+  test("runs lifecycle sweep previews through the admin namespace", async () => {
+    const res = await fetch(`${BASE}/admin/lifecycle/sweep`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: true }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.dry_run).toBe(true);
+    expect(Array.isArray(data.documents)).toBe(true);
+  });
+
+  test("requires explicit confirmation for destructive lifecycle sweep execution", async () => {
+    const rejected = await fetch(`${BASE}/admin/lifecycle/sweep`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: false }),
+    });
+    expect(rejected.status).toBe(400);
+
+    const confirmed = await fetch(`${BASE}/admin/lifecycle/sweep`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: false, confirm: "ARCHIVE" }),
+    });
+    expect(confirmed.status).toBe(200);
+    const data = await confirmed.json() as any;
+    expect(data.dry_run).toBe(false);
   });
 });
 

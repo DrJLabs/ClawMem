@@ -9,6 +9,7 @@
   "files": [
     "bin/",
     "src/",
+    "ui/dist/",
     "README.md",
     "LICENSE",
     "CLAUDE.md",

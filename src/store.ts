@@ -967,6 +967,7 @@ function ensureVecTableInternal(db: Database, dimensions: number): void {
 // =============================================================================
 
 export type Store = {
+  // Intentionally exposed for admin read models and maintenance helpers.
   db: Database;
   dbPath: string;
   close: () => void;
@@ -2035,6 +2036,7 @@ export function canonicalDocId(collection: string, path: string): string {
 /**
  * Remove stale embeddings: content_vectors rows whose hash no longer belongs
  * to any active document. Also cleans the corresponding vectors_vec rows.
+ * Used by collection-delete cleanup and the CLI maintenance path.
  * Returns the number of stale embeddings removed.
  */
 export function cleanStaleEmbeddings(db: Database): number {
@@ -2930,7 +2932,7 @@ export function listCollections(db: Database): { name: string; pwd: string; glob
 
 /**
  * Remove a collection and clean up its documents.
- * Uses collections.ts to remove from YAML config and cleans up database.
+ * Uses collections.ts to remove from YAML config and cleans up database rows.
  */
 export function removeCollection(db: Database, collectionName: string): { deletedDocs: number; cleanedHashes: number } {
   // Delete documents from database

@@ -1,5 +1,5 @@
-import { existsSync } from "fs";
-import { basename, join, normalize } from "path";
+import { existsSync, realpathSync, statSync } from "fs";
+import { basename, join, resolve } from "path";
 
 function getConsoleDistDir(): string {
   return process.env.CLAWMEM_CONSOLE_DIST_DIR || join(import.meta.dir, "..", "..", "ui", "dist");
@@ -19,12 +19,14 @@ function getConsoleAssetPath(pathname: string, consoleDistDir: string): string |
     return null;
   }
 
-  const normalized = normalize(relative).replace(/^(\.\.(\/|\\|$))+/, "");
-  if (!normalized || normalized.startsWith("..")) {
+  const candidatePath = resolve(consoleDistDir, relative);
+  const consoleRoot = resolve(consoleDistDir);
+  const normalizedRoot = `${consoleRoot}${consoleRoot.endsWith("/") ? "" : "/"}`;
+  if (candidatePath !== consoleRoot && !candidatePath.startsWith(normalizedRoot)) {
     return null;
   }
 
-  return join(consoleDistDir, normalized);
+  return candidatePath;
 }
 
 export function serveConsoleAsset(pathname: string): Response | null {
@@ -44,7 +46,20 @@ export function serveConsoleAsset(pathname: string): Response | null {
 
   const assetPath = getConsoleAssetPath(pathname, consoleDistDir);
   if (assetPath && existsSync(assetPath)) {
-    return new Response(Bun.file(assetPath));
+    try {
+      if (!statSync(assetPath).isFile()) {
+        return null;
+      }
+      const resolvedAssetPath = realpathSync(assetPath);
+      const resolvedConsoleDir = realpathSync(consoleDistDir);
+      const normalizedRoot = `${resolvedConsoleDir}${resolvedConsoleDir.endsWith("/") ? "" : "/"}`;
+      if (resolvedAssetPath !== resolvedConsoleDir && !resolvedAssetPath.startsWith(normalizedRoot)) {
+        return null;
+      }
+      return new Response(Bun.file(resolvedAssetPath));
+    } catch {
+      return null;
+    }
   }
 
   if (assetPath && basename(assetPath).includes(".")) {

@@ -1,6 +1,6 @@
 import { parseVirtualPath, type Store } from "../store.ts";
 import { addCollection, getCollection, updateCollection } from "../collections.ts";
-import { existsSync, statSync } from "fs";
+import { existsSync, realpathSync, statSync } from "fs";
 import { resolve as pathResolve } from "path";
 import {
   buildCollectionsModel,
@@ -35,18 +35,27 @@ async function parseJsonBody<T>(req: Request): Promise<{ ok: true; body: T | nul
 
 function normalizeCollectionPath(input: string): { path: string | null; error: string } {
   const absPath = pathResolve(input);
+  if (!existsSync(absPath)) return { path: null, error: `Directory not found: ${absPath}` };
+
+  let resolvedPath: string;
+  try {
+    resolvedPath = realpathSync(absPath);
+  } catch {
+    return { path: null, error: `Directory not found: ${absPath}` };
+  }
+
   const deniedPrefixes = ["/etc", "/root", "/var", "/proc", "/sys", "/dev"];
   const deniedPatterns = [".ssh", ".gnupg", ".env", "credentials", "secrets", ".aws", ".kube"];
-  if (deniedPrefixes.some((prefix) => absPath === prefix || absPath.startsWith(`${prefix}/`))) {
-    return { path: null, error: `Directory not allowed: ${absPath}` };
+  if (deniedPrefixes.some((prefix) => resolvedPath === prefix || resolvedPath.startsWith(`${prefix}/`))) {
+    return { path: null, error: `Directory not allowed: ${resolvedPath}` };
   }
-  if (deniedPatterns.some((pattern) => absPath.toLowerCase().includes(pattern.toLowerCase()))) {
-    return { path: null, error: `Directory not allowed: ${absPath}` };
+  if (deniedPatterns.some((pattern) => resolvedPath.toLowerCase().includes(pattern.toLowerCase()))) {
+    return { path: null, error: `Directory not allowed: ${resolvedPath}` };
   }
-  if (!existsSync(absPath)) return { path: null, error: `Directory not found: ${absPath}` };
+
   try {
-    return statSync(absPath).isDirectory()
-      ? { path: absPath, error: "" }
+    return statSync(resolvedPath).isDirectory()
+      ? { path: resolvedPath, error: "" }
       : { path: null, error: `Directory not found: ${absPath}` };
   } catch {
     return { path: null, error: `Directory not found: ${absPath}` };

@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { mkdirSync, rmSync, unlinkSync, writeFileSync } from "fs";
+import { mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "fs";
 import { createStore, type Store } from "../../src/store.ts";
 import { addCollection, getCollection, saveConfig } from "../../src/collections.ts";
 import { hashContent } from "../../src/indexer.ts";
@@ -394,6 +394,25 @@ describe("GET/POST/PATCH/DELETE /admin/collections", () => {
     expect((await patchRes.json() as any).error).toContain("not allowed");
   });
 
+  test("rejects symlinked collection roots that resolve into sensitive directories", async () => {
+    const symlinkPath = "/tmp/clawmem-server-sensitive-link";
+    rmSync(symlinkPath, { force: true, recursive: true });
+    symlinkSync("/etc", symlinkPath);
+
+    const createRes = await fetch(`${BASE}/admin/collections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "etc-link",
+        path: symlinkPath,
+      }),
+    });
+    expect(createRes.status).toBe(400);
+    expect((await createRes.json() as any).error).toContain("not allowed");
+
+    rmSync(symlinkPath, { force: true, recursive: true });
+  });
+
   test("delete removes database documents and config entry for the collection", async () => {
     const now = new Date().toISOString();
     const tempBody = "# Operator Notes\n\nThis collection should be deleted from the database.";
@@ -732,6 +751,10 @@ describe("console asset serving", () => {
 
     const traversalRes = await fetch(`${BASE}/console/assets/%2e%2e/%2e%2e/%2e%2e/tmp/clawmem-server-outside.txt`);
     expect(traversalRes.status).toBe(404);
+
+    const dottedRouteRes = await fetch(`${BASE}/console/collections/foo.bar`);
+    expect(dottedRouteRes.status).toBe(200);
+    expect(await dottedRouteRes.text()).toContain("console");
 
     rmSync("/tmp/clawmem-server-outside.txt", { force: true });
     rmSync(TEST_UI_DIST, { recursive: true, force: true });

@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 
 export function CollectionDetailPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
-  const decodedCollectionId = collectionId ? decodeURIComponent(collectionId) : null;
+  const decodedCollectionId = collectionId ?? null;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 

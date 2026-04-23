@@ -5,7 +5,14 @@ import { api } from "../lib/api";
 
 export function RunDetailPage() {
   const params = useParams<{ runId: string }>();
-  const runId = params.runId;
+  const runId = params.runId ?? "";
+
+  const runDetail = useQuery({
+    queryKey: ["runs", runId],
+    queryFn: () => api.getRunDetail(runId),
+    enabled: Boolean(runId),
+    refetchInterval: 4000,
+  });
 
   if (!runId) {
     return (
@@ -14,12 +21,6 @@ export function RunDetailPage() {
       </Panel>
     );
   }
-
-  const runDetail = useQuery({
-    queryKey: ["runs", runId],
-    queryFn: () => api.getRunDetail(runId),
-    refetchInterval: 4000,
-  });
 
   if (runDetail.isPending) {
     return (

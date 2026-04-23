@@ -1,5 +1,5 @@
 import { existsSync, realpathSync, statSync } from "fs";
-import { basename, join, resolve } from "path";
+import { basename, extname, join, resolve } from "path";
 
 function getConsoleDistDir(): string {
   return process.env.CLAWMEM_CONSOLE_DIST_DIR || join(import.meta.dir, "..", "..", "ui", "dist");
@@ -62,7 +62,10 @@ export function serveConsoleAsset(pathname: string): Response | null {
     }
   }
 
-  if (assetPath && basename(assetPath).includes(".")) {
+  const relativeAssetPath = pathname.replace(/^\/console\/?/, "");
+  const looksLikeBuiltAsset = relativeAssetPath.startsWith("assets/")
+    || [".css", ".js", ".mjs", ".map", ".ico", ".png", ".jpg", ".jpeg", ".svg", ".webp", ".woff", ".woff2", ".ttf", ".eot", ".json", ".wasm"].includes(extname(assetPath ?? "").toLowerCase());
+  if (assetPath && looksLikeBuiltAsset) {
     return null;
   }
 

@@ -668,6 +668,30 @@ describe("console asset serving", () => {
 
     rmSync(TEST_UI_DIST, { recursive: true, force: true });
   });
+
+  test("keeps console assets reachable when bearer auth is enabled", async () => {
+    mkdirSync(TEST_UI_DIST, { recursive: true });
+    writeFileSync(`${TEST_UI_DIST}/index.html`, "<!doctype html><html><body>console</body></html>");
+    writeFileSync(`${TEST_UI_DIST}/app.js`, "console.log('ok');");
+    process.env.CLAWMEM_API_TOKEN = "test-secret";
+
+    const indexRes = await fetch(`${BASE}/console`);
+    expect(indexRes.status).toBe(200);
+
+    const assetRes = await fetch(`${BASE}/console/app.js`);
+    expect(assetRes.status).toBe(200);
+
+    const adminRejected = await fetch(`${BASE}/admin/overview`);
+    expect(adminRejected.status).toBe(401);
+
+    const adminAccepted = await fetch(`${BASE}/admin/overview`, {
+      headers: { Authorization: "Bearer test-secret" },
+    });
+    expect(adminAccepted.status).toBe(200);
+
+    delete process.env.CLAWMEM_API_TOKEN;
+    rmSync(TEST_UI_DIST, { recursive: true, force: true });
+  });
 });
 
 describe("auth", () => {

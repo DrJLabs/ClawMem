@@ -24,6 +24,18 @@ import type {
   UpdateCollectionRequest,
 } from "./types";
 
+const API_TOKEN_STORAGE_KEY = "clawmem_api_token";
+let cachedApiToken: string | null = null;
+
+type TokenStorage = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+};
+
+type TokenHistory = {
+  replaceState(data: unknown, unused: string, url?: string | URL | null): void;
+};
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -274,11 +286,53 @@ function assertForgetDocumentResponse(value: unknown): ForgetDocumentResponse {
   return value as ForgetDocumentResponse;
 }
 
+function getDefaultTokenStorage(): TokenStorage | null {
+  return typeof window !== "undefined" ? window.sessionStorage : null;
+}
+
+function getDefaultTokenHistory(): TokenHistory | null {
+  return typeof window !== "undefined" ? window.history : null;
+}
+
+export function bootstrapConsoleApiToken(
+  urlInput?: string | URL | null,
+  storage: TokenStorage | null = getDefaultTokenStorage(),
+  history: TokenHistory | null = getDefaultTokenHistory(),
+): string | null {
+  if (!storage) {
+    return cachedApiToken;
+  }
+
+  const existing = cachedApiToken ?? storage.getItem(API_TOKEN_STORAGE_KEY);
+  cachedApiToken = existing;
+
+  const rawUrl = urlInput === undefined
+    ? (typeof window !== "undefined" ? window.location.href : null)
+    : urlInput;
+  if (!rawUrl) {
+    return cachedApiToken;
+  }
+
+  const url = rawUrl instanceof URL ? new URL(rawUrl.toString()) : new URL(rawUrl, "https://console.local");
+  const token = url.searchParams.get("token");
+  if (!token || token.trim().length === 0) {
+    return cachedApiToken;
+  }
+
+  cachedApiToken = token;
+  storage.setItem(API_TOKEN_STORAGE_KEY, token);
+  url.searchParams.delete("token");
+  history?.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  return token;
+}
+
 async function json(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
+  const token = bootstrapConsoleApiToken(null);
   const response = await fetch(input, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
   });

@@ -21,13 +21,30 @@ describe("Runs pages", () => {
         },
       ],
     }));
+    const getOverview = mock(async () => ({
+      health: {
+        service: { state: "healthy", message: "Watcher running" },
+        api: { state: "healthy", message: "Operator API responding" },
+      },
+      lanes: {
+        light: { enabled: true, latestRunStatus: "enabled" },
+        heavy: { enabled: true, window: "5:00-9:00", latestRunStatus: "skipped" },
+      },
+      backlog: { totalDocuments: 1048, needsEmbedding: 42 },
+      activeJobs: [],
+      alerts: [],
+      checkedAt: "2026-04-23T01:00:00.000Z",
+    }));
 
     const original = apiModule.api.getRuns;
+    const originalOverview = apiModule.api.getOverview;
     apiModule.api.getRuns = getRuns;
+    apiModule.api.getOverview = getOverview;
 
     try {
       const client = new QueryClient();
       await client.prefetchQuery({ queryKey: ["runs"], queryFn: apiModule.api.getRuns });
+      await client.prefetchQuery({ queryKey: ["overview"], queryFn: apiModule.api.getOverview });
 
       const markup = renderToStaticMarkup(
         <QueryClientProvider client={client}>
@@ -41,8 +58,13 @@ describe("Runs pages", () => {
 
       expect(markup).toContain("reindex");
       expect(markup).toContain("running");
+      expect(markup).toContain("Light lane");
+      expect(markup).toContain("enabled");
+      expect(markup).toContain("Heavy lane");
+      expect(markup).toContain("5:00-9:00");
     } finally {
       apiModule.api.getRuns = original;
+      apiModule.api.getOverview = originalOverview;
     }
   });
 

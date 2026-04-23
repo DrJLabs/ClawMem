@@ -7,6 +7,7 @@ import {
   buildMemoryFeedModel,
   buildOverviewModel,
   buildRunsModel,
+  type OverviewModel,
   getCollectionDetail,
   getRunDetail,
 } from "./service.ts";
@@ -76,14 +77,42 @@ function normalizeSinceQuery(input: string | null): string | null {
   return Number.isNaN(parsed.getTime()) ? null : input;
 }
 
-function getHeavyLaneWindow() {
-  const start = process.env.CLAWMEM_HEAVY_LANE_WINDOW_START;
-  const end = process.env.CLAWMEM_HEAVY_LANE_WINDOW_END;
+function getLaneConfigFromWatcher(watcher: { environment?: Record<string, string> }) {
+  const env = watcher.environment ?? {};
+  const heavyStart = env.CLAWMEM_HEAVY_LANE_WINDOW_START;
+  const heavyEnd = env.CLAWMEM_HEAVY_LANE_WINDOW_END;
+
   return {
-    enabled: process.env.CLAWMEM_HEAVY_LANE === "true",
-    start: start ? Number(start) : null,
-    end: end ? Number(end) : null,
+    lightLaneEnabled: env.CLAWMEM_ENABLE_CONSOLIDATION === "true",
+    heavyLaneWindow: {
+      enabled: env.CLAWMEM_HEAVY_LANE === "true",
+      start: heavyStart ? Number(heavyStart) : null,
+      end: heavyEnd ? Number(heavyEnd) : null,
+    },
   };
+}
+
+function buildCurrentLaneRunItems(overview: OverviewModel) {
+  return [
+    {
+      id: "lane-light-current",
+      source: "lane" as const,
+      label: "Light lane",
+      status: overview.lanes.light.latestRunStatus ?? "unknown",
+      detail: overview.lanes.light.enabled ? "Watcher-hosted consolidation worker" : "Disabled",
+      startedAt: overview.checkedAt,
+      finishedAt: null,
+    },
+    {
+      id: "lane-heavy-current",
+      source: "lane" as const,
+      label: "Heavy lane",
+      status: overview.lanes.heavy.latestRunStatus ?? "unknown",
+      detail: overview.lanes.heavy.enabled ? overview.lanes.heavy.window ?? "Enabled" : "Disabled",
+      startedAt: overview.checkedAt,
+      finishedAt: null,
+    },
+  ];
 }
 
 export function createAdminRoutes(store: Store): AdminRoute[] {
@@ -98,14 +127,18 @@ export function createAdminRoutes(store: Store): AdminRoute[] {
           subState: "failed",
           mainPid: null,
           startedAt: null,
+          environment: {},
           error: "Unable to inspect watcher",
         }));
-
-        return Response.json(buildOverviewModel(store, {
+        const laneConfig = getLaneConfigFromWatcher(watcher);
+        const overview = buildOverviewModel(store, {
           watcher,
           logs: watcher.error ? [{ level: "warn", message: watcher.error }] : [],
-          heavyLaneWindow: getHeavyLaneWindow(),
-        }));
+          lightLaneEnabled: laneConfig.lightLaneEnabled,
+          heavyLaneWindow: laneConfig.heavyLaneWindow,
+        });
+
+        return Response.json(overview);
       },
     },
     {
@@ -249,19 +282,60 @@ export function createAdminRoutes(store: Store): AdminRoute[] {
     {
       method: "GET",
       pattern: /^\/admin\/runs$/,
-      handler: (_req: Request, url: URL) => {
+      handler: async (_req: Request, url: URL) => {
         const rawLimit = Number(url.searchParams.get("limit") ?? "25");
         const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100) : 25;
-        return Response.json({ items: buildRunsModel(store, limit) });
+        const watcher = await getWatcherSnapshot().catch(() => ({
+          id: "clawmem-watcher.service",
+          activeState: "unavailable",
+          subState: "failed",
+          mainPid: null,
+          startedAt: null,
+          environment: {},
+          error: "Unable to inspect watcher",
+        }));
+        const laneConfig = getLaneConfigFromWatcher(watcher);
+        const overview = buildOverviewModel(store, {
+          watcher,
+          logs: watcher.error ? [{ level: "warn", message: watcher.error }] : [],
+          lightLaneEnabled: laneConfig.lightLaneEnabled,
+          heavyLaneWindow: laneConfig.heavyLaneWindow,
+        });
+        const items = [...buildCurrentLaneRunItems(overview), ...buildRunsModel(store, limit)];
+        return Response.json({ items: items.slice(0, limit) });
       },
     },
     {
       method: "GET",
       pattern: /^\/admin\/runs\/([^/]+)$/,
-      handler: (_req: Request, url: URL) => {
+      handler: async (_req: Request, url: URL) => {
         const runId = url.pathname.split("/").pop();
         if (!runId) {
           return Response.json({ error: "Run id is required" }, { status: 400 });
+        }
+
+        if (runId === "lane-light-current" || runId === "lane-heavy-current") {
+          const watcher = await getWatcherSnapshot().catch(() => ({
+            id: "clawmem-watcher.service",
+            activeState: "unavailable",
+            subState: "failed",
+            mainPid: null,
+            startedAt: null,
+            environment: {},
+            error: "Unable to inspect watcher",
+          }));
+          const laneConfig = getLaneConfigFromWatcher(watcher);
+          const overview = buildOverviewModel(store, {
+            watcher,
+            logs: watcher.error ? [{ level: "warn", message: watcher.error }] : [],
+            lightLaneEnabled: laneConfig.lightLaneEnabled,
+            heavyLaneWindow: laneConfig.heavyLaneWindow,
+          });
+          const item = buildCurrentLaneRunItems(overview).find((candidate) => candidate.id === runId);
+          if (!item) {
+            return Response.json({ error: `Run not found: ${runId}` }, { status: 404 });
+          }
+          return Response.json({ item });
         }
 
         const item = getRunDetail(store, runId);

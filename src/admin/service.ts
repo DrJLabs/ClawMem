@@ -9,8 +9,9 @@ import type {
 } from "./types.ts";
 
 type OverviewRuntime = {
-  watcher: { activeState: string; subState: string; mainPid: number | null };
+  watcher: { activeState: string; subState: string; mainPid: number | null; environment?: Record<string, string> };
   logs: Array<{ level: string; message: string }>;
+  lightLaneEnabled: boolean;
   heavyLaneWindow: { enabled: boolean; start: number | null; end: number | null };
 };
 
@@ -70,6 +71,10 @@ function deriveServiceHealthMessage(activeState: string): string {
   return "Watcher unavailable";
 }
 
+function shouldSuppressMaintenanceRun(run: MaintenanceStatusRow): boolean {
+  return run.lane === "heavy" && run.status === "skipped" && run.reason === "outside_window";
+}
+
 export function buildOverviewModel(store: Store, runtime: OverviewRuntime): OverviewModel {
   const checkedAt = new Date().toISOString();
   const status = store.getStatus();
@@ -112,15 +117,15 @@ export function buildOverviewModel(store: Store, runtime: OverviewRuntime): Over
     },
     lanes: {
       light: {
-        enabled: true,
-        latestRunStatus: latestLight?.status ?? "unknown",
+        enabled: runtime.lightLaneEnabled,
+        latestRunStatus: latestLight?.status ?? (runtime.lightLaneEnabled ? "enabled" : "disabled"),
       },
       heavy: {
         enabled: runtime.heavyLaneWindow.enabled,
         window: runtime.heavyLaneWindow.enabled
           ? formatWindow(runtime.heavyLaneWindow.start, runtime.heavyLaneWindow.end)
           : null,
-        latestRunStatus: latestHeavy?.status ?? "unknown",
+        latestRunStatus: latestHeavy?.status ?? (runtime.heavyLaneWindow.enabled ? "enabled" : "disabled"),
       },
     },
     backlog: {
@@ -178,6 +183,12 @@ export function buildRunsModel(store: Store, limit: number): AdminRunItem[] {
   ];
 
   return items
+    .filter((item) => {
+      if (item.source !== "maintenance") return true;
+      const runId = Number(item.id.slice("maintenance-".length));
+      const run = maintenance.find((candidate) => candidate.id === runId);
+      return run ? !shouldSuppressMaintenanceRun(run) : true;
+    })
     .sort((a, b) => {
       const aTime = a.startedAt ?? a.finishedAt ?? "";
       const bTime = b.startedAt ?? b.finishedAt ?? "";

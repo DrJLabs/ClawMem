@@ -406,6 +406,7 @@ describe("GET /admin/runs", () => {
     expect(res.status).toBe(200);
     const data = await res.json() as any;
     expect(Array.isArray(data.items)).toBe(true);
+    expect(data.items.some((item: any) => item.id === "lane-light-current")).toBe(true);
     expect(data.items.some((item: any) => item.id === `job-${jobId}`)).toBe(true);
   });
 

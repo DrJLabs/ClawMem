@@ -19,6 +19,22 @@ describe("admin runtime adapters", () => {
     expect(snapshot.activeState).toBe("active");
     expect(snapshot.subState).toBe("running");
     expect(snapshot.mainPid).toBe(3166023);
+    expect(snapshot.environment).toEqual({});
+  });
+
+  test("parses environment variables from systemctl show output", () => {
+    const snapshot = parseSystemctlShow([
+      "Id=clawmem-watcher.service",
+      "ActiveState=active",
+      "SubState=running",
+      "MainPID=3166023",
+      "Environment=CLAWMEM_ENABLE_CONSOLIDATION=true CLAWMEM_HEAVY_LANE=true CLAWMEM_HEAVY_LANE_WINDOW_START=5 CLAWMEM_HEAVY_LANE_WINDOW_END=9",
+    ].join("\n"));
+
+    expect(snapshot.environment.CLAWMEM_ENABLE_CONSOLIDATION).toBe("true");
+    expect(snapshot.environment.CLAWMEM_HEAVY_LANE).toBe("true");
+    expect(snapshot.environment.CLAWMEM_HEAVY_LANE_WINDOW_START).toBe("5");
+    expect(snapshot.environment.CLAWMEM_HEAVY_LANE_WINDOW_END).toBe("9");
   });
 
   test("parses journald JSON lines into structured log entries", () => {
@@ -74,6 +90,58 @@ describe("admin runtime adapters", () => {
     expect(items[0]?.message).toBe("watcher warning");
   });
 
+  test("returns logs newest first", async () => {
+    const items = await queryWatcherLogs(
+      { limit: 10 },
+      async () => ({
+        exitCode: 0,
+        stdout: [
+          JSON.stringify({
+            __REALTIME_TIMESTAMP: "1776864223000000",
+            PRIORITY: "6",
+            SYSLOG_IDENTIFIER: "clawmem-host.sh",
+            MESSAGE: "older message",
+          }),
+          JSON.stringify({
+            __REALTIME_TIMESTAMP: "1776864225000000",
+            PRIORITY: "6",
+            SYSLOG_IDENTIFIER: "clawmem-host.sh",
+            MESSAGE: "newer message",
+          }),
+        ].join("\n"),
+        stderr: "",
+      }),
+    );
+
+    expect(items.map((item) => item.message)).toEqual(["newer message", "older message"]);
+  });
+
+  test("suppresses heavy lane outside_window skip noise", async () => {
+    const items = await queryWatcherLogs(
+      { limit: 10 },
+      async () => ({
+        exitCode: 0,
+        stdout: [
+          JSON.stringify({
+            __REALTIME_TIMESTAMP: "1776864223000000",
+            PRIORITY: "6",
+            SYSLOG_IDENTIFIER: "clawmem-host.sh",
+            MESSAGE: "[maintenance] heavy gate skipped outside_window",
+          }),
+          JSON.stringify({
+            __REALTIME_TIMESTAMP: "1776864225000000",
+            PRIORITY: "6",
+            SYSLOG_IDENTIFIER: "clawmem-host.sh",
+            MESSAGE: "newer message",
+          }),
+        ].join("\n"),
+        stderr: "",
+      }),
+    );
+
+    expect(items.map((item) => item.message)).toEqual(["newer message"]);
+  });
+
   test("returns a warning log entry when journalctl fails", async () => {
     const items = await queryWatcherLogs({}, async () => ({
       exitCode: 1,
@@ -100,6 +168,7 @@ describe("admin runtime adapters", () => {
 
     expect(snapshot.activeState).toBe("unavailable");
     expect(snapshot.subState).toBe("failed");
+    expect(snapshot.environment).toEqual({});
     expect(snapshot.error).toContain("could not be found");
   });
 });

@@ -23,6 +23,8 @@ describe("admin read models", () => {
     });
 
     expect(model.health.service.state).toBe("healthy");
+    expect(model.health.api.state).toBe("healthy");
+    expect(model.health.api.message).toBe("Operator API responding");
     expect(model.backlog.needsEmbedding).toBe(0);
     expect(model.lanes.heavy.enabled).toBe(true);
     expect(model.lanes.light.enabled).toBe(true);
@@ -84,7 +86,7 @@ describe("admin read models", () => {
     expect(items[0]?.title).toContain("Snapshot");
   });
 
-  test("surfaces unavailable and unknown states when runtime and lane data are missing", () => {
+  test("keeps API health healthy even when watcher and lane data are missing", () => {
     const store = createStore(":memory:");
     const model = buildOverviewModel(store, {
       watcher: { activeState: "unknown", subState: "dead", mainPid: null, environment: {} },
@@ -94,7 +96,8 @@ describe("admin read models", () => {
     });
 
     expect(model.health.service.state).toBe("unavailable");
-    expect(model.health.api.state).toBe("unavailable");
+    expect(model.health.api.state).toBe("healthy");
+    expect(model.health.api.message).toBe("Operator API responding");
     expect(model.lanes.light.latestRunStatus).toBe("disabled");
     expect(model.lanes.heavy.latestRunStatus).toBe("disabled");
   });

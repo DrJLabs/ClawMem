@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -36,10 +36,8 @@ describe("Runs pages", () => {
       checkedAt: "2026-04-23T01:00:00.000Z",
     }));
 
-    const original = apiModule.api.getRuns;
-    const originalOverview = apiModule.api.getOverview;
-    apiModule.api.getRuns = getRuns;
-    apiModule.api.getOverview = getOverview;
+    const getRunsSpy = spyOn(apiModule.api, "getRuns").mockImplementation(getRuns);
+    const getOverviewSpy = spyOn(apiModule.api, "getOverview").mockImplementation(getOverview);
 
     try {
       const client = new QueryClient();
@@ -63,8 +61,8 @@ describe("Runs pages", () => {
       expect(markup).toContain("Heavy lane");
       expect(markup).toContain("5:00-9:00");
     } finally {
-      apiModule.api.getRuns = original;
-      apiModule.api.getOverview = originalOverview;
+      getRunsSpy.mockRestore();
+      getOverviewSpy.mockRestore();
     }
   });
 
@@ -81,8 +79,7 @@ describe("Runs pages", () => {
       },
     }));
 
-    const original = apiModule.api.getRunDetail;
-    apiModule.api.getRunDetail = getRunDetail;
+    const getRunDetailSpy = spyOn(apiModule.api, "getRunDetail").mockImplementation(getRunDetail);
 
     try {
       const client = new QueryClient();
@@ -104,7 +101,7 @@ describe("Runs pages", () => {
       expect(markup).toContain("reindex");
       expect(markup).toContain("Admin job #7");
     } finally {
-      apiModule.api.getRunDetail = original;
+      getRunDetailSpy.mockRestore();
     }
   });
 });

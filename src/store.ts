@@ -4057,16 +4057,6 @@ function updateAdminJobFn(
     error_text?: string | null;
   },
 ): void {
-  if (
-    patch.status === undefined &&
-    patch.started_at === undefined &&
-    patch.finished_at === undefined &&
-    patch.result_json === undefined &&
-    patch.error_text === undefined
-  ) {
-    return;
-  }
-
   const sets: string[] = [];
   const vals: (string | number | null)[] = [];
 

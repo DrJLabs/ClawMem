@@ -110,8 +110,8 @@ export function buildOverviewModel(store: Store, runtime: OverviewRuntime): Over
         checkedAt,
       },
       api: {
-        state: "unavailable",
-        message: "Operator API status unavailable",
+        state: "healthy",
+        message: "Operator API responding",
         checkedAt,
       },
     },

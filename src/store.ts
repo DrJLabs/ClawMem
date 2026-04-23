@@ -2691,14 +2691,15 @@ export function findDocumentByDocid(db: Database, docid: string): { filepath: st
   const shortHash = docid.startsWith('#') ? docid.slice(1) : docid;
 
   if (shortHash.length < 1) return null;
+  const escapedHash = shortHash.replace(/[\\%_]/g, "\\$&");
 
   // Look up documents where hash starts with the short hash
   const doc = db.prepare(`
     SELECT 'clawmem://' || d.collection || '/' || d.path as filepath, d.hash
     FROM documents d
-    WHERE d.hash LIKE ? AND d.active = 1
+    WHERE d.hash LIKE ? ESCAPE '\\' AND d.active = 1
     LIMIT 1
-  `).get(`${shortHash}%`) as { filepath: string; hash: string } | null;
+  `).get(`${escapedHash}%`) as { filepath: string; hash: string } | null;
 
   return doc;
 }

@@ -313,7 +313,7 @@ export const api = {
   getLogs: async (params?: URLSearchParams) =>
     assertLogsResponse(await json(`/admin/logs${params && params.toString() ? `?${params.toString()}` : ""}`)),
   getRuns: async () => assertRunsResponse(await json("/admin/runs")),
-  getRunDetail: async (runId: string) => assertRunDetailResponse(await json(`/admin/runs/${runId}`)),
+  getRunDetail: async (runId: string) => assertRunDetailResponse(await json(`/admin/runs/${encodeURIComponent(runId)}`)),
   queueReindex: (body: ReindexJobRequest) =>
     json("/admin/jobs/reindex", {
       method: "POST",

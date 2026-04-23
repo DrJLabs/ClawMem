@@ -100,7 +100,7 @@ export type DeleteCollectionResponse = {
 
 export type RunItem = {
   id: string;
-  source: "job" | "maintenance";
+  source: "job" | "maintenance" | "lane";
   label: string;
   status: string;
   detail: string;

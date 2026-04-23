@@ -90,7 +90,7 @@ function isCollectionItem(value: unknown): boolean {
 }
 
 function isRunItem(value: unknown): boolean {
-  const validSources = new Set(["job", "maintenance"]);
+  const validSources = new Set(["job", "maintenance", "lane"]);
   return (
     isObject(value) &&
     typeof value.id === "string" &&

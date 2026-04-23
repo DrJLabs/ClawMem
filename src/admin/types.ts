@@ -77,6 +77,7 @@ export type WatcherSnapshot = {
   subState: string;
   mainPid: number | null;
   startedAt: string | null;
+  environment: Record<string, string>;
   error?: string | null;
 };
 
@@ -89,7 +90,7 @@ export type JournalLogEntry = {
   message: string;
 };
 
-export type AdminRunSource = "job" | "maintenance";
+export type AdminRunSource = "job" | "maintenance" | "lane";
 
 export type AdminRunItem = {
   id: string;

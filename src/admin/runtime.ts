@@ -19,6 +19,20 @@ function parsePid(value: string | undefined): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function parseEnvironment(value: string | undefined): Record<string, string> {
+  if (!value || value.trim().length === 0) return {};
+  return Object.fromEntries(
+    value
+      .split(" ")
+      .filter(Boolean)
+      .map((entry) => {
+        const [key, ...rest] = entry.split("=");
+        return [key ?? "", rest.join("=")];
+      })
+      .filter(([key]) => key.length > 0),
+  );
+}
+
 function microsToIso(value: unknown): string | null {
   if (typeof value !== "string" || value.length === 0) return null;
   const micros = Number(value);
@@ -34,6 +48,7 @@ export function parseSystemctlShow(raw: string): WatcherSnapshot {
     subState: map.SubState ?? "unknown",
     mainPid: parsePid(map.MainPID),
     startedAt: map.ExecMainStartTimestamp ?? null,
+    environment: parseEnvironment(map.Environment),
     error: null,
   };
 }
@@ -102,6 +117,10 @@ async function runSystemctlWatcherShow(): Promise<WatcherCommandResult> {
   return { exitCode, stdout, stderr };
 }
 
+function shouldSuppressLog(item: JournalLogEntry): boolean {
+  return /outside_window/i.test(item.message) && /skipped/i.test(item.message);
+}
+
 async function runWatcherLogQuery(input: WatcherLogQueryInput): Promise<WatcherLogQueryResult> {
   const args = [
     "journalctl",
@@ -110,6 +129,7 @@ async function runWatcherLogQuery(input: WatcherLogQueryInput): Promise<WatcherL
     "clawmem-watcher.service",
     "--output=json",
     "--no-pager",
+    "--reverse",
     "--lines",
     String(input.limit ?? 200),
   ];
@@ -158,7 +178,14 @@ export async function queryWatcherLogs(
   const items = result.stdout
     .split("\n")
     .filter(Boolean)
-    .map(parseJournalJsonLine);
+    .map(parseJournalJsonLine)
+    .filter((item) => !shouldSuppressLog(item))
+    .sort((a, b) => {
+      if (a.timestamp === b.timestamp) return 0;
+      if (a.timestamp === null) return 1;
+      if (b.timestamp === null) return -1;
+      return b.timestamp.localeCompare(a.timestamp);
+    });
 
   return input.priority ? items.filter((item) => item.level === input.priority) : items;
 }
@@ -174,6 +201,7 @@ export async function getWatcherSnapshot(
       subState: "failed",
       mainPid: null,
       startedAt: null,
+      environment: {},
       error: result.stderr.trim() || `systemctl exited with code ${result.exitCode}`,
     };
   }

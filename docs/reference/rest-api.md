@@ -139,6 +139,82 @@ curl http://localhost:7438/graph/similar/a1b2c3?limit=5
 | POST | `/graphs/build` | Rebuild temporal + semantic graphs |
 | GET | `/export` | Full vault export as JSON |
 
+## Operator console API
+
+The operator console uses a separate admin namespace intended for local operational surfaces rather than general retrieval clients.
+
+### Overview, runs, memory feed, and logs
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/admin/overview` | Operator summary: watcher health, lane state, backlog, alerts |
+| GET | `/admin/runs` | Recent admin jobs and maintenance runs |
+| GET | `/admin/runs/:id` | One run detail record |
+| GET | `/admin/memory-feed` | Recent `_clawmem` artifacts with body + lineage counts |
+| GET | `/admin/logs` | Watcher journald view with `level`, `since`, and `limit` filters |
+
+Example:
+
+```bash
+curl 'http://localhost:7438/admin/logs?level=warn&limit=50'
+curl 'http://localhost:7438/admin/runs'
+```
+
+### Collection management
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/admin/collections` | Collection cards for the operator console |
+| POST | `/admin/collections` | Create a collection (requires an existing directory root) |
+| GET | `/admin/collections/:id` | Read one collection detail |
+| PATCH | `/admin/collections/:id` | Update collection root/pattern |
+| DELETE | `/admin/collections/:id` | Remove collection config and clean its documents from SQLite |
+
+### Admin mutations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/admin/jobs/reindex` | Queue a durable reindex job |
+| POST | `/admin/lifecycle/sweep` | Preview or execute lifecycle sweep |
+| POST | `/admin/lifecycle/restore` | Restore archived docs |
+| POST | `/admin/documents/:docid/pin` | Pin or unpin document |
+| POST | `/admin/documents/:docid/snooze` | Snooze or unsnooze document |
+| POST | `/admin/documents/:docid/forget` | Deactivate document |
+
+Notes:
+
+- `/admin/jobs/reindex` rejects unknown collections up front.
+- `/admin/collections` create/update paths require an existing directory, not just any filesystem path.
+- Destructive admin mutations add extra confirmation requirements:
+  - `POST /admin/lifecycle/sweep` with `dry_run: false` requires `confirm: "ARCHIVE"`
+  - `POST /admin/documents/:docid/forget` requires `confirm: "FORGET"`
+
+Examples:
+
+```bash
+curl -X POST http://localhost:7438/admin/jobs/reindex \
+  -H 'Content-Type: application/json' \
+  -d '{"collection":"my-project"}'
+
+curl -X POST http://localhost:7438/admin/lifecycle/sweep \
+  -H 'Content-Type: application/json' \
+  -d '{"dry_run":false,"confirm":"ARCHIVE"}'
+
+curl -X POST http://localhost:7438/admin/documents/a1b2c3/forget \
+  -H 'Content-Type: application/json' \
+  -d '{"confirm":"FORGET"}'
+```
+
+## Static console mount
+
+If `ui/dist` exists, `clawmem serve` also mounts the built operator console at:
+
+```text
+/console
+```
+
+This is intended for local operator use and works well behind a local proxy or Tailscale-served loopback port.
+
 ## Response format
 
 All responses are JSON. Search/retrieve responses include:

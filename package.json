@@ -9,6 +9,7 @@
   "files": [
     "bin/",
     "src/",
+    "ui/dist/",
     "README.md",
     "LICENSE",
     "CLAUDE.md",
@@ -18,7 +19,10 @@
   "scripts": {
     "test": "bun test",
     "dev": "bun src/clawmem.ts",
-    "inspector": "npx @modelcontextprotocol/inspector bun src/clawmem.ts mcp"
+    "inspector": "npx @modelcontextprotocol/inspector bun src/clawmem.ts mcp",
+    "ui:dev": "cd ui && bun run dev",
+    "ui:build": "cd ui && bun run build",
+    "ui:test": "cd ui && bun run test"
   },
   "repository": {
     "type": "git",

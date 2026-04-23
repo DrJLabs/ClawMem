@@ -16,6 +16,9 @@ import { enrichResults, reciprocalRankFusion, toRanked } from "./search-utils.ts
 import { applyCompositeScoring, hasRecencyIntent, type EnrichedResult } from "./memory.ts";
 import { applyMMRDiversity } from "./mmr.ts";
 import { listCollections } from "./collections.ts";
+import { createAdminRoutes } from "./admin/router.ts";
+import { recoverPendingAdminJobs } from "./admin/jobs.ts";
+import { serveConsoleAsset } from "./admin/static.ts";
 import { classifyIntent, type IntentType } from "./intent.ts";
 import { getDefaultLlamaCpp } from "./llm.ts";
 import {
@@ -35,12 +38,15 @@ type RouteHandler = (req: Request, url: URL, store: Store) => Promise<Response> 
 // Auth
 // =============================================================================
 
-const API_TOKEN = process.env.CLAWMEM_API_TOKEN || null;
+function getApiToken(): string | null {
+  return process.env.CLAWMEM_API_TOKEN || null;
+}
 
-function checkAuth(req: Request): Response | null {
-  if (!API_TOKEN) return null; // No token configured — open access
+function checkAuth(req: Request, url: URL): Response | null {
+  const apiToken = getApiToken();
+  if (!apiToken) return null; // No token configured — open access
   const auth = req.headers.get("authorization");
-  if (!auth || auth !== `Bearer ${API_TOKEN}`) {
+  if (!auth || auth !== `Bearer ${apiToken}`) {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
   return null;
@@ -56,9 +62,21 @@ function jsonResponse(data: any, status: number = 200): Response {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "http://localhost:*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
     },
+  });
+}
+
+function withCorsHeaders(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", "http://localhost:*");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
   });
 }
 
@@ -729,8 +747,8 @@ const routes: Route[] = [
   { method: "GET",  pattern: /^\/export$/,                 handler: handleExport },
 ];
 
-function matchRoute(method: string, pathname: string): RouteHandler | null {
-  for (const route of routes) {
+function matchRoute(method: string, pathname: string, routeSet: Route[] = routes): RouteHandler | null {
+  for (const route of routeSet) {
     if (route.method === method && route.pattern.test(pathname)) {
       return route.handler;
     }
@@ -743,6 +761,15 @@ function matchRoute(method: string, pathname: string): RouteHandler | null {
 // =============================================================================
 
 export function startServer(store: Store, port: number = 7438, host: string = "127.0.0.1") {
+  recoverPendingAdminJobs(store);
+
+  const adminRoutes: Route[] = createAdminRoutes(store).map((route) => ({
+    method: route.method,
+    pattern: route.pattern,
+    handler: async (req, url) => route.handler(req, url),
+  }));
+  const allRoutes = [...routes, ...adminRoutes];
+
   return Bun.serve({
     port,
     hostname: host,
@@ -755,28 +782,31 @@ export function startServer(store: Store, port: number = 7438, host: string = "1
           status: 204,
           headers: {
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Max-Age": "86400",
           },
         });
       }
 
+      const consoleResponse = serveConsoleAsset(url.pathname);
+      if (consoleResponse) return withCorsHeaders(consoleResponse);
+
       // Auth check
-      const authError = checkAuth(req);
-      if (authError) return authError;
+      const authError = checkAuth(req, url);
+      if (authError) return withCorsHeaders(authError);
 
       // Route matching
-      const handler = matchRoute(req.method, url.pathname);
+      const handler = matchRoute(req.method, url.pathname, allRoutes);
       if (!handler) {
-        return jsonError(`Not found: ${req.method} ${url.pathname}`, 404);
+        return withCorsHeaders(jsonError(`Not found: ${req.method} ${url.pathname}`, 404));
       }
 
       try {
-        return await handler(req, url, store);
+        return withCorsHeaders(await handler(req, url, store));
       } catch (err: any) {
         console.error(`[clawmem-server] ${req.method} ${url.pathname} error:`, err);
-        return jsonError(`Internal error: ${err.message}`, 500);
+        return withCorsHeaders(jsonError(`Internal error: ${err.message}`, 500));
       }
     },
   });

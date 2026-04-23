@@ -1,0 +1,107 @@
+export type AdminHealthState = "healthy" | "stale" | "degraded" | "unavailable";
+
+export type AdminServiceHealth = {
+  state: AdminHealthState;
+  message: string;
+  checkedAt: string;
+};
+
+export type AdminAlert = {
+  id: string;
+  severity: "info" | "warn" | "error";
+  message: string;
+};
+
+export type AdminActiveJob = {
+  id: number;
+  kind: string;
+  status: string;
+};
+
+export type OverviewModel = {
+  health: {
+    service: AdminServiceHealth;
+    api: AdminServiceHealth;
+  };
+  lanes: {
+    light: { enabled: boolean; latestRunStatus: string | null };
+    heavy: { enabled: boolean; window: string | null; latestRunStatus: string | null };
+  };
+  backlog: {
+    totalDocuments: number;
+    needsEmbedding: number;
+  };
+  activeJobs: AdminActiveJob[];
+  alerts: AdminAlert[];
+  checkedAt: string;
+};
+
+export type MemoryFeedItem = {
+  documentId: string;
+  type: string;
+  title: string;
+  summary: string;
+  body: string;
+  createdAt: string;
+  sourceSession: string | null;
+  sourceRun: number | null;
+  sourceCount: number;
+  path: string;
+};
+
+export type AdminCollectionItem = {
+  id: string;
+  name: string;
+  root: string;
+  pattern: string;
+  documents: number;
+  embeddedDocuments: number;
+  unembeddedDocuments: number;
+  lastActivity: string | null;
+  updateCommand: string | null;
+};
+
+export type AdminCollectionDetail = AdminCollectionItem;
+
+export type AdminCollectionsResponse = {
+  items: AdminCollectionItem[];
+};
+
+export type AdminCollectionDetailResponse = {
+  item: AdminCollectionDetail;
+};
+
+export type WatcherSnapshot = {
+  id: string;
+  activeState: string;
+  subState: string;
+  mainPid: number | null;
+  startedAt: string | null;
+  environment: Record<string, string>;
+  error?: string | null;
+};
+
+export type JournalLogLevel = "err" | "warn" | "info";
+
+export type JournalLogEntry = {
+  timestamp: string | null;
+  level: JournalLogLevel;
+  source: string;
+  message: string;
+};
+
+export type AdminRunSource = "job" | "maintenance" | "lane";
+
+export type AdminRunItem = {
+  id: string;
+  source: AdminRunSource;
+  label: string;
+  status: string;
+  detail: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type AdminRunsResponse = {
+  items: AdminRunItem[];
+};

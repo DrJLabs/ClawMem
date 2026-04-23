@@ -147,6 +147,48 @@ clawmem update --embed
 clawmem doctor
 ```
 
+## Operator Console
+
+ClawMem now includes a mobile-first operator console for monitoring watcher health, recent background runs, extracted memory artifacts, collection scope, logs, and high-impact maintenance actions.
+
+### Local development
+
+Run the backend and the UI separately during development:
+
+```bash
+./bin/clawmem serve --port 7438
+bun run ui:dev
+```
+
+The Vite dev server proxies `/admin/*` and `/health` to the local ClawMem server on `127.0.0.1:7438`.
+
+### Build and serve through ClawMem
+
+Build the UI into `ui/dist`:
+
+```bash
+bun run ui:build
+```
+
+When `ui/dist` exists, `clawmem serve` mounts the built operator console at:
+
+```text
+/console
+```
+
+That makes it straightforward to expose the console through a local reverse proxy or a Tailscale-served local port while still keeping ClawMem itself on loopback.
+
+### Available operator surfaces
+
+The current console includes:
+
+- `Overview` for watcher health, backlog, and active work
+- `Runs` for admin jobs and maintenance runs
+- `Memory` for recent `_clawmem` extraction output
+- `Collections` for collection CRUD and reindex control
+- `More > Logs` for watcher journald output
+- `More` for maintenance and danger-zone admin actions
+
 ### Upgrading
 
 ```bash

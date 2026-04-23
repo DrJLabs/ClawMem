@@ -191,6 +191,29 @@ export function addCollection(
 }
 
 /**
+ * Update an existing collection without deleting the entry.
+ */
+export function updateCollection(
+  name: string,
+  patch: Partial<Pick<Collection, "path" | "pattern" | "context" | "update">>
+): boolean {
+  const config = loadConfig();
+  const current = config.collections[name];
+
+  if (!current) {
+    return false;
+  }
+
+  config.collections[name] = {
+    ...current,
+    ...patch,
+  };
+
+  saveConfig(config);
+  return true;
+}
+
+/**
  * Remove a collection
  */
 export function removeCollection(name: string): boolean {

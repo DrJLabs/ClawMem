@@ -486,6 +486,24 @@ function initializeDatabase(db: Database): void {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      requested_by TEXT NOT NULL,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      result_json TEXT,
+      error_text TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_jobs_created_at ON admin_jobs(created_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_admin_jobs_status ON admin_jobs(status, created_at DESC)`);
+
   // SAME: Context usage tracking (feedback loop)
   db.exec(`
     CREATE TABLE IF NOT EXISTS context_usage (
@@ -949,6 +967,7 @@ function ensureVecTableInternal(db: Database, dimensions: number): void {
 // =============================================================================
 
 export type Store = {
+  // Intentionally exposed for admin read models and maintenance helpers.
   db: Database;
   dbPath: string;
   close: () => void;
@@ -1014,6 +1033,7 @@ export type Store = {
   updateDocument: (documentId: number, title: string, hash: string, modifiedAt: string) => void;
   deactivateDocument: (collectionName: string, path: string) => void;
   getActiveDocumentPaths: (collectionName: string) => string[];
+  removeCollection: (collectionName: string) => { deletedDocs: number; cleanedHashes: number };
 
   // Vector/embedding operations
   getHashesForEmbedding: () => { hash: string; body: string; path: string }[];
@@ -1030,6 +1050,21 @@ export type Store = {
   updateSession: (sessionId: string, updates: { endedAt?: string; handoffPath?: string; filesChanged?: string[]; summary?: string }) => void;
   getSession: (sessionId: string) => SessionRecord | null;
   getRecentSessions: (limit: number) => SessionRecord[];
+
+  // SAME: Admin job tracking
+  createAdminJob: (input: { kind: string; requested_by: string; payload_json?: string }) => number;
+  updateAdminJob: (
+    id: number,
+    patch: {
+      status?: string;
+      started_at?: string | null;
+      finished_at?: string | null;
+      result_json?: string | null;
+      error_text?: string | null;
+    },
+  ) => void;
+  getAdminJob: (id: number) => AdminJobRow | null;
+  listAdminJobs: (limit?: number) => AdminJobRow[];
 
   // SAME: Context usage tracking
   insertUsage: (usage: UsageRecord) => number;
@@ -1198,6 +1233,7 @@ export function createStore(dbPath?: string, opts?: { readonly?: boolean; busyTi
     updateDocument: (documentId: number, title: string, hash: string, modifiedAt: string) => updateDocument(db, documentId, title, hash, modifiedAt),
     deactivateDocument: (collectionName: string, path: string) => deactivateDocument(db, collectionName, path),
     getActiveDocumentPaths: (collectionName: string) => getActiveDocumentPaths(db, collectionName),
+    removeCollection: (collectionName: string) => removeCollection(db, collectionName),
 
     // Vector/embedding operations
     getHashesForEmbedding: () => getHashesForEmbedding(db),
@@ -1214,6 +1250,12 @@ export function createStore(dbPath?: string, opts?: { readonly?: boolean; busyTi
     updateSession: (sessionId: string, updates) => updateSessionFn(db, sessionId, updates),
     getSession: (sessionId: string) => getSessionFn(db, sessionId),
     getRecentSessions: (limit: number) => getRecentSessionsFn(db, limit),
+
+    // SAME: Admin job tracking
+    createAdminJob: (input: { kind: string; requested_by: string; payload_json?: string }) => createAdminJobFn(db, input),
+    updateAdminJob: (id: number, patch) => updateAdminJobFn(db, id, patch),
+    getAdminJob: (id: number) => getAdminJobFn(db, id),
+    listAdminJobs: (limit: number = 25) => listAdminJobsFn(db, limit),
 
     // SAME: Context usage tracking
     insertUsage: (usage: UsageRecord) => insertUsageFn(db, usage) as number,
@@ -1738,6 +1780,20 @@ export type IndexStatus = {
 // SAME: Agent Memory Types
 // =============================================================================
 
+export type AdminJobRow = {
+  id: number;
+  kind: string;
+  status: string;
+  requested_by: string;
+  payload_json: string;
+  result_json: string | null;
+  error_text: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type SessionRecord = {
   sessionId: string;
   startedAt: string;
@@ -1980,6 +2036,7 @@ export function canonicalDocId(collection: string, path: string): string {
 /**
  * Remove stale embeddings: content_vectors rows whose hash no longer belongs
  * to any active document. Also cleans the corresponding vectors_vec rows.
+ * Used by collection-delete cleanup and the CLI maintenance path.
  * Returns the number of stale embeddings removed.
  */
 export function cleanStaleEmbeddings(db: Database): number {
@@ -2636,14 +2693,15 @@ export function findDocumentByDocid(db: Database, docid: string): { filepath: st
   const shortHash = docid.startsWith('#') ? docid.slice(1) : docid;
 
   if (shortHash.length < 1) return null;
+  const escapedHash = shortHash.replace(/[\\%_]/g, "\\$&");
 
   // Look up documents where hash starts with the short hash
   const doc = db.prepare(`
     SELECT 'clawmem://' || d.collection || '/' || d.path as filepath, d.hash
     FROM documents d
-    WHERE d.hash LIKE ? AND d.active = 1
+    WHERE d.hash LIKE ? ESCAPE '\\' AND d.active = 1
     LIMIT 1
-  `).get(`${shortHash}%`) as { filepath: string; hash: string } | null;
+  `).get(`${escapedHash}%`) as { filepath: string; hash: string } | null;
 
   return doc;
 }
@@ -2874,7 +2932,7 @@ export function listCollections(db: Database): { name: string; pwd: string; glob
 
 /**
  * Remove a collection and clean up its documents.
- * Uses collections.ts to remove from YAML config and cleans up database.
+ * Uses collections.ts to remove from YAML config and cleans up database rows.
  */
 export function removeCollection(db: Database, collectionName: string): { deletedDocs: number; cleanedHashes: number } {
   // Delete documents from database
@@ -2883,8 +2941,11 @@ export function removeCollection(db: Database, collectionName: string): { delete
   // Clean up orphaned content hashes
   const cleanupResult = db.prepare(`
     DELETE FROM content
-    WHERE hash NOT IN (SELECT DISTINCT hash FROM documents WHERE active = 1)
+    WHERE hash NOT IN (SELECT DISTINCT hash FROM documents)
   `).run();
+
+  // Drop embeddings that no longer belong to any active document.
+  cleanStaleEmbeddings(db);
 
   // Remove from YAML config (returns true if found and removed)
   collectionsRemoveCollection(collectionName);
@@ -3973,6 +4034,83 @@ function getRecentSessionsFn(db: Database, limit: number): SessionRecord[] {
     filesChanged: row.files_changed ? JSON.parse(row.files_changed) : [],
     summary: row.summary,
   }));
+}
+
+// =============================================================================
+// SAME: Admin Job Tracking
+// =============================================================================
+
+function createAdminJobFn(
+  db: Database,
+  input: { kind: string; requested_by: string; payload_json?: string },
+): number {
+  const result = db.prepare(`
+    INSERT INTO admin_jobs (kind, requested_by, payload_json)
+    VALUES (?, ?, ?)
+  `).run(input.kind, input.requested_by, input.payload_json ?? "{}");
+  return Number(result.lastInsertRowid);
+}
+
+function updateAdminJobFn(
+  db: Database,
+  id: number,
+  patch: {
+    status?: string;
+    started_at?: string | null;
+    finished_at?: string | null;
+    result_json?: string | null;
+    error_text?: string | null;
+  },
+): void {
+  const sets: string[] = [];
+  const vals: (string | number | null)[] = [];
+
+  if (Object.prototype.hasOwnProperty.call(patch, "status")) {
+    sets.push("status = ?");
+    vals.push(patch.status ?? null);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "started_at")) {
+    sets.push("started_at = ?");
+    vals.push(patch.started_at ?? null);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "finished_at")) {
+    sets.push("finished_at = ?");
+    vals.push(patch.finished_at ?? null);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "result_json")) {
+    sets.push("result_json = ?");
+    vals.push(patch.result_json ?? null);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "error_text")) {
+    sets.push("error_text = ?");
+    vals.push(patch.error_text ?? null);
+  }
+
+  if (sets.length === 0) {
+    return;
+  }
+
+  sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
+  vals.push(id);
+
+  db.prepare(`
+    UPDATE admin_jobs
+    SET ${sets.join(", ")}
+    WHERE id = ?
+  `).run(...vals);
+}
+
+function getAdminJobFn(db: Database, id: number): AdminJobRow | null {
+  const row = db.prepare(`SELECT * FROM admin_jobs WHERE id = ?`).get(id) as AdminJobRow | null;
+  return row ?? null;
+}
+
+function listAdminJobsFn(db: Database, limit: number = 25): AdminJobRow[] {
+  return db.prepare(`
+    SELECT * FROM admin_jobs
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+  `).all(limit) as AdminJobRow[];
 }
 
 // =============================================================================

@@ -205,7 +205,17 @@ export async function queryWatcherLogs(
   input: WatcherLogQueryInput,
   runQuery: WatcherLogQueryRunner = watcherLogQueryRunner,
 ): Promise<JournalLogEntry[]> {
-  const result = await runQuery(input);
+  let result: WatcherLogQueryResult;
+  try {
+    result = await runQuery(input);
+  } catch (error: unknown) {
+    return [{
+      timestamp: null,
+      level: "warn",
+      source: "journalctl",
+      message: error instanceof Error ? error.message : String(error),
+    }];
+  }
   if (result.exitCode !== 0) {
     return [{
       timestamp: null,

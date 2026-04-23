@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { rmSync, unlinkSync } from "fs";
+import { mkdtempSync, rmSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { createStore, type Store } from "../../src/store.ts";
 import { addCollection, getCollection, loadConfig, saveConfig, updateCollection } from "../../src/collections.ts";
 
-const TEST_DB = "/tmp/clawmem-admin-jobs-test.sqlite";
-const TEST_CONFIG_DIR = "/tmp/clawmem-admin-config";
+let TEST_DB = "";
+let TEST_CONFIG_DIR = "";
 
 let store: Store;
 
@@ -17,6 +19,8 @@ function cleanupFile(path: string): void {
 }
 
 beforeEach(() => {
+  TEST_CONFIG_DIR = mkdtempSync(join(tmpdir(), "clawmem-admin-config-"));
+  TEST_DB = join(mkdtempSync(join(tmpdir(), "clawmem-admin-db-")), "index.sqlite");
   process.env.CLAWMEM_CONFIG_DIR = TEST_CONFIG_DIR;
   process.env.INDEX_PATH = TEST_DB;
 

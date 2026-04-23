@@ -42,14 +42,9 @@ function getApiToken(): string | null {
   return process.env.CLAWMEM_API_TOKEN || null;
 }
 
-function isConsolePath(pathname: string): boolean {
-  return pathname === "/console" || pathname.startsWith("/console/");
-}
-
 function checkAuth(req: Request, url: URL): Response | null {
   const apiToken = getApiToken();
   if (!apiToken) return null; // No token configured — open access
-  if (isConsolePath(url.pathname)) return null;
   const auth = req.headers.get("authorization");
   if (!auth || auth !== `Bearer ${apiToken}`) {
     return jsonResponse({ error: "Unauthorized" }, 401);
@@ -782,12 +777,12 @@ export function startServer(store: Store, port: number = 7438, host: string = "1
         });
       }
 
+      const consoleResponse = serveConsoleAsset(url.pathname);
+      if (consoleResponse) return consoleResponse;
+
       // Auth check
       const authError = checkAuth(req, url);
       if (authError) return authError;
-
-      const consoleResponse = serveConsoleAsset(url.pathname);
-      if (consoleResponse) return consoleResponse;
 
       // Route matching
       const handler = matchRoute(req.method, url.pathname, allRoutes);

@@ -41,8 +41,8 @@ describe("Runs pages", () => {
 
     try {
       const client = new QueryClient();
-      await client.prefetchQuery({ queryKey: ["runs"], queryFn: apiModule.api.getRuns });
-      await client.prefetchQuery({ queryKey: ["overview"], queryFn: apiModule.api.getOverview });
+      await client.prefetchQuery({ queryKey: ["runs"], queryFn: getRuns });
+      await client.prefetchQuery({ queryKey: ["overview"], queryFn: getOverview });
 
       const markup = renderToStaticMarkup(
         <QueryClientProvider client={client}>
@@ -85,7 +85,7 @@ describe("Runs pages", () => {
       const client = new QueryClient();
       await client.prefetchQuery({
         queryKey: ["runs", "job-7"],
-        queryFn: () => apiModule.api.getRunDetail("job-7"),
+        queryFn: getRunDetail,
       });
 
       const markup = renderToStaticMarkup(

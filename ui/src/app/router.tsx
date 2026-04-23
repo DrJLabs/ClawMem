@@ -6,6 +6,8 @@ import { RunDetailPage } from "../pages/RunDetailPage";
 import { MemoryFeedPage } from "../pages/MemoryFeedPage";
 import { CollectionsPage } from "../pages/CollectionsPage";
 import { CollectionDetailPage } from "../pages/CollectionDetailPage";
+import { AdminPage } from "../pages/AdminPage";
+import { LogsPage } from "../pages/LogsPage";
 
 export const consoleBase = "/console";
 
@@ -50,13 +52,16 @@ export const appRoutes = [
       },
       {
         path: "more",
-        element: (
-          <section className="placeholder-page" aria-label="More">
-            <p className="placeholder-page__eyebrow">Task 4 shell</p>
-            <h2>More</h2>
-            <p>Secondary controls and logs remain out of scope for Task 4.</p>
-          </section>
-        ),
+        children: [
+          {
+            index: true,
+            element: <AdminPage />,
+          },
+          {
+            path: "logs",
+            element: <LogsPage />,
+          },
+        ],
       },
     ],
   },

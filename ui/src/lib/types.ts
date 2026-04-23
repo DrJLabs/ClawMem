@@ -128,3 +128,72 @@ export type ReindexJobResponse = {
     collection?: string | null;
   };
 };
+
+export type JournalLogLevel = "err" | "warn" | "info";
+
+export type JournalLogItem = {
+  timestamp: string | null;
+  level: JournalLogLevel;
+  source: string;
+  message: string;
+};
+
+export type LogsResponse = {
+  items: JournalLogItem[];
+};
+
+export type LifecycleSweepRequest = {
+  dry_run?: boolean;
+  confirm?: string;
+};
+
+export type LifecycleSweepResponse = {
+  dry_run: boolean;
+  candidates?: number;
+  archived?: number;
+  documents?: Array<{
+    id: number;
+    path: string;
+    title: string;
+    content_type: string | null;
+    modified_at: string | null;
+    last_accessed_at: string | null;
+  }>;
+};
+
+export type LifecycleRestoreRequest = {
+  collection?: string;
+};
+
+export type LifecycleRestoreResponse = {
+  restored: number;
+};
+
+export type PinDocumentRequest = {
+  unpin?: boolean;
+};
+
+export type PinDocumentResponse = {
+  docid: string;
+  pinned: boolean;
+};
+
+export type SnoozeDocumentRequest = {
+  until?: string;
+  unsnooze?: boolean;
+};
+
+export type SnoozeDocumentResponse = {
+  docid: string;
+  snoozed: boolean;
+  until: string | null;
+};
+
+export type ForgetDocumentResponse = {
+  docid: string;
+  forgotten: true;
+};
+
+export type ForgetDocumentRequest = {
+  confirm: string;
+};

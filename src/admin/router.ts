@@ -1,4 +1,4 @@
-import type { Store } from "../store.ts";
+import { parseVirtualPath, type Store } from "../store.ts";
 import { addCollection, getCollection, removeCollection, updateCollection } from "../collections.ts";
 import { existsSync, statSync } from "fs";
 import { resolve as pathResolve } from "path";
@@ -59,9 +59,16 @@ function getAdminDocumentId(url: URL): string | null {
 }
 
 function resolveActiveDocument(store: Store, docid: string) {
-  return store.db.prepare(
-    "SELECT id, collection, path FROM documents WHERE hash LIKE ? AND active = 1 ORDER BY id LIMIT 1",
-  ).get(`${docid.startsWith("#") ? docid.slice(1) : docid}%`) as { id: number; collection: string; path: string } | undefined;
+  const resolved = store.findDocumentByDocid(docid);
+  if (!resolved) return null;
+
+  const parsed = parseVirtualPath(resolved.filepath);
+  if (!parsed) return null;
+
+  return {
+    collection: parsed.collectionName,
+    path: parsed.path,
+  };
 }
 
 async function loadLifecyclePolicy(dryRun: boolean) {
@@ -75,6 +82,10 @@ function normalizeSinceQuery(input: string | null): string | null {
   if (!input) return null;
   const parsed = new Date(input);
   return Number.isNaN(parsed.getTime()) ? null : input;
+}
+
+function isValidTimestamp(input: string): boolean {
+  return !Number.isNaN(new Date(input).getTime());
 }
 
 function getLaneConfigFromWatcher(watcher: { environment?: Record<string, string> }) {
@@ -437,6 +448,10 @@ export function createAdminRoutes(store: Store): AdminRoute[] {
         const doc = resolveActiveDocument(store, docid);
         if (!doc) {
           return Response.json({ error: `Document not found: ${docid}` }, { status: 404 });
+        }
+
+        if (typeof parsed.body?.until === "string" && !isValidTimestamp(parsed.body.until)) {
+          return Response.json({ error: "until must be a valid timestamp" }, { status: 400 });
         }
 
         const until = parsed.body?.unsnooze

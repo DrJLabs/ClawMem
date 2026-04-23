@@ -5,7 +5,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdirSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { createStore, type Store } from "../../src/store.ts";
-import { addCollection, saveConfig } from "../../src/collections.ts";
+import { addCollection, getCollection, saveConfig } from "../../src/collections.ts";
 import { hashContent } from "../../src/indexer.ts";
 import { startServer } from "../../src/server.ts";
 import { resetWatcherLogQueryRunnerForTests, setWatcherLogQueryRunnerForTests } from "../../src/admin/runtime.ts";
@@ -363,7 +363,7 @@ describe("GET/POST/PATCH/DELETE /admin/collections", () => {
     expect(blankPatchRes.status).toBe(400);
   });
 
-  test("delete removes database documents for the collection", async () => {
+  test("delete removes database documents and config entry for the collection", async () => {
     const now = new Date().toISOString();
     const tempBody = "# Operator Notes\n\nThis collection should be deleted from the database.";
     const tempHash = hashContent(tempBody);
@@ -386,6 +386,7 @@ describe("GET/POST/PATCH/DELETE /admin/collections", () => {
     const after = await fetch(`${BASE}/export`);
     const afterData = await after.json() as any;
     expect(afterData.documents.some((doc: any) => doc.collection === "temp-delete")).toBe(false);
+    expect(getCollection("temp-delete")).toBeNull();
   });
 });
 
@@ -510,6 +511,16 @@ describe("POST /documents/:docid/pin", () => {
 });
 
 describe("POST /admin document and lifecycle mutations", () => {
+  test("does not treat SQL wildcards as document id matches", async () => {
+    const pinRes = await fetch(`${BASE}/admin/documents/%25/pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(pinRes.status).toBe(404);
+  });
+
   test("wraps pin and snooze mutations under /admin", async () => {
     const docid = authDocHash.slice(0, 6);
 
@@ -530,6 +541,19 @@ describe("POST /admin document and lifecycle mutations", () => {
     const snoozed = await snoozeRes.json() as any;
     expect(snoozed.snoozed).toBe(true);
     expect(snoozed.until).toBe("2026-05-01T00:00:00.000Z");
+  });
+
+  test("rejects invalid snooze timestamps", async () => {
+    const docid = authDocHash.slice(0, 6);
+
+    const snoozeRes = await fetch(`${BASE}/admin/documents/${docid}/snooze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ until: "not-a-real-timestamp" }),
+    });
+
+    expect(snoozeRes.status).toBe(400);
+    expect((await snoozeRes.json() as any).error).toContain("until");
   });
 
   test("forgets a document and restores archived documents through admin endpoints", async () => {

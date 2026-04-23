@@ -74,6 +74,26 @@ describe("admin read models", () => {
     expect(runs.some((item) => item.label === "light / consolidate")).toBe(true);
   });
 
+  test("sorts queued jobs by creation time ahead of older started runs", () => {
+    const store = createStore(":memory:");
+    const runningId = store.createAdminJob({
+      kind: "embed",
+      requested_by: "operator-console",
+    });
+    store.updateAdminJob(runningId, {
+      status: "running",
+      started_at: "2026-04-22T18:00:00.000Z",
+    });
+    const queuedId = store.createAdminJob({
+      kind: "reindex",
+      requested_by: "operator-console",
+    });
+
+    const runs = buildRunsModel(store, 10).filter((item) => item.source === "job");
+    expect(runs[0]?.id).toBe(`job-${queuedId}`);
+    expect(runs[1]?.id).toBe(`job-${runningId}`);
+  });
+
   test("builds a typed memory feed from _clawmem documents", () => {
     const store = createStore(":memory:");
     const now = "2026-04-22T18:00:00.000Z";

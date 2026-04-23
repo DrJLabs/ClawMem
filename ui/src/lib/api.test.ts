@@ -28,6 +28,28 @@ describe("operator API client", () => {
     expect(history.replaceState).toHaveBeenCalledWith(null, "", "/console/runs?view=grid#details");
   });
 
+  test("keeps the token in memory and scrubs the URL when storage throws", () => {
+    const history = {
+      replaceState: mock((_state: unknown, _unused: string, _url?: string | URL | null) => {}),
+    };
+
+    const token = bootstrapConsoleApiToken(
+      "https://example.test/console/runs?token=test-secret#details",
+      {
+        getItem: () => {
+          throw new Error("storage blocked");
+        },
+        setItem: () => {
+          throw new Error("quota exceeded");
+        },
+      },
+      history,
+    );
+
+    expect(token).toBe("test-secret");
+    expect(history.replaceState).toHaveBeenCalledWith(null, "", "/console/runs#details");
+  });
+
   test("sends bearer auth when a token has been bootstrapped", async () => {
     const storage = new Map<string, string>([["clawmem_api_token", "test-secret"]]);
     bootstrapConsoleApiToken(

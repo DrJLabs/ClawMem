@@ -299,12 +299,13 @@ export function bootstrapConsoleApiToken(
   storage: TokenStorage | null = getDefaultTokenStorage(),
   history: TokenHistory | null = getDefaultTokenHistory(),
 ): string | null {
-  if (!storage) {
-    return cachedApiToken;
+  if (cachedApiToken === null && storage) {
+    try {
+      cachedApiToken = storage.getItem(API_TOKEN_STORAGE_KEY);
+    } catch {
+      cachedApiToken = null;
+    }
   }
-
-  const existing = cachedApiToken ?? storage.getItem(API_TOKEN_STORAGE_KEY);
-  cachedApiToken = existing;
 
   const rawUrl = urlInput === undefined
     ? (typeof window !== "undefined" ? window.location.href : null)
@@ -314,13 +315,17 @@ export function bootstrapConsoleApiToken(
   }
 
   const url = rawUrl instanceof URL ? new URL(rawUrl.toString()) : new URL(rawUrl, "https://console.local");
-  const token = url.searchParams.get("token");
-  if (!token || token.trim().length === 0) {
+  const token = url.searchParams.get("token")?.trim();
+  if (!token) {
     return cachedApiToken;
   }
 
   cachedApiToken = token;
-  storage.setItem(API_TOKEN_STORAGE_KEY, token);
+  try {
+    storage?.setItem(API_TOKEN_STORAGE_KEY, token);
+  } catch {
+    // Keep the in-memory token usable even when Web Storage is unavailable.
+  }
   url.searchParams.delete("token");
   history?.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   return token;

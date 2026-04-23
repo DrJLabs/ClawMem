@@ -31,6 +31,7 @@ type ActiveJobRow = {
   status: string;
   started_at: string | null;
   finished_at: string | null;
+  created_at: string;
 };
 
 type MemoryFeedRow = {
@@ -71,18 +72,14 @@ function deriveServiceHealthMessage(activeState: string): string {
   return "Watcher unavailable";
 }
 
-function shouldSuppressMaintenanceRun(run: MaintenanceStatusRow): boolean {
-  return run.lane === "heavy" && run.status === "skipped" && run.reason === "outside_window";
-}
-
 export function buildOverviewModel(store: Store, runtime: OverviewRuntime): OverviewModel {
   const checkedAt = new Date().toISOString();
   const status = store.getStatus();
   const activeJobs = store.db.prepare(`
-    SELECT id, kind, status, started_at, finished_at
+    SELECT id, kind, status, started_at, finished_at, created_at
     FROM admin_jobs
     WHERE status IN ('queued', 'running')
-    ORDER BY datetime(created_at) DESC, id DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT 10
   `).all() as ActiveJobRow[];
 
@@ -148,16 +145,17 @@ export function buildOverviewModel(store: Store, runtime: OverviewRuntime): Over
 
 export function buildRunsModel(store: Store, limit: number): AdminRunItem[] {
   const jobs = store.db.prepare(`
-    SELECT id, kind, status, started_at, finished_at
+    SELECT id, kind, status, started_at, finished_at, created_at
     FROM admin_jobs
-    ORDER BY datetime(created_at) DESC, id DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT ?
   `).all(limit) as ActiveJobRow[];
 
   const maintenance = store.db.prepare(`
     SELECT id, lane, phase, status, reason, started_at, finished_at
     FROM maintenance_runs
-    ORDER BY datetime(started_at) DESC, id DESC
+    WHERE NOT (lane = 'heavy' AND status = 'skipped' AND reason = 'outside_window')
+    ORDER BY started_at DESC, id DESC
     LIMIT ?
   `).all(limit) as MaintenanceStatusRow[];
 
@@ -168,7 +166,7 @@ export function buildRunsModel(store: Store, limit: number): AdminRunItem[] {
       label: job.kind,
       status: job.status,
       detail: `Admin job #${job.id}`,
-      startedAt: job.started_at,
+      startedAt: job.started_at ?? job.created_at,
       finishedAt: job.finished_at,
     })),
     ...maintenance.map((run) => ({
@@ -183,12 +181,6 @@ export function buildRunsModel(store: Store, limit: number): AdminRunItem[] {
   ];
 
   return items
-    .filter((item) => {
-      if (item.source !== "maintenance") return true;
-      const runId = Number(item.id.slice("maintenance-".length));
-      const run = maintenance.find((candidate) => candidate.id === runId);
-      return run ? !shouldSuppressMaintenanceRun(run) : true;
-    })
     .sort((a, b) => {
       const aTime = a.startedAt ?? a.finishedAt ?? "";
       const bTime = b.startedAt ?? b.finishedAt ?? "";
@@ -363,6 +355,15 @@ export function buildCollectionsModel(store: Store): AdminCollectionItem[] {
 export function getCollectionDetail(store: Store, collectionId: string): AdminCollectionDetail | null {
   const collection = getCollection(collectionId);
   if (!collection) return null;
-  const stats = buildCollectionStatsMap(store);
-  return toCollectionItem(collection, stats.get(collection.name));
+  const stats = store.db.prepare(`
+    SELECT collection,
+           COUNT(*) AS documents,
+           SUM(CASE WHEN embed_state = 'synced' THEN 1 ELSE 0 END) AS embedded_documents,
+           SUM(CASE WHEN embed_state IS NULL OR embed_state != 'synced' THEN 1 ELSE 0 END) AS unembedded_documents,
+           MAX(COALESCE(last_accessed_at, modified_at, created_at)) AS last_activity
+    FROM documents
+    WHERE active = 1 AND collection = ?
+    GROUP BY collection
+  `).get(collection.name) as CollectionStatsRow | undefined;
+  return toCollectionItem(collection, stats);
 }

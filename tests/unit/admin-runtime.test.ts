@@ -172,6 +172,21 @@ describe("admin runtime adapters", () => {
     ]);
   });
 
+  test("returns a warning log entry when the runner throws", async () => {
+    const items = await queryWatcherLogs({}, async () => {
+      throw new Error("spawn failed");
+    });
+
+    expect(items).toEqual([
+      {
+        timestamp: null,
+        level: "warn",
+        source: "journalctl",
+        message: "spawn failed",
+      },
+    ]);
+  });
+
   test("returns an unavailable snapshot when systemctl fails", async () => {
     const snapshot = await getWatcherSnapshot(async () => ({
       exitCode: 1,

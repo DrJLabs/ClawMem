@@ -370,6 +370,21 @@ describe("GET/POST/PATCH/DELETE /admin/collections", () => {
     expect(blankPatchRes.status).toBe(400);
   });
 
+  test("rejects invalid or reserved collection names", async () => {
+    for (const name of ["bad/name", "name with space", "_clawmem"]) {
+      const res = await fetch(`${BASE}/admin/collections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          path: TEST_VALID_COLLECTION_DIR,
+        }),
+      });
+      expect(res.status).toBe(400);
+      expect((await res.json() as any).error).toContain("Invalid or reserved collection name");
+    }
+  });
+
   test("rejects sensitive collection roots", async () => {
     const createRes = await fetch(`${BASE}/admin/collections`, {
       method: "POST",
@@ -793,6 +808,17 @@ describe("auth", () => {
     // was already evaluated. For a proper test, we'd need to restart.
     // Just verify the auth check logic works conceptually.
     delete process.env.CLAWMEM_API_TOKEN;
+  });
+
+  test("advertises PATCH and DELETE in preflight responses", async () => {
+    const res = await fetch(`${BASE}/admin/collections/configured`, {
+      method: "OPTIONS",
+    });
+
+    expect(res.status).toBe(204);
+    const allowMethods = res.headers.get("Access-Control-Allow-Methods") ?? "";
+    expect(allowMethods).toContain("PATCH");
+    expect(allowMethods).toContain("DELETE");
   });
 });
 

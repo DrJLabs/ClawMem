@@ -1,5 +1,5 @@
 import { parseVirtualPath, type Store } from "../store.ts";
-import { addCollection, getCollection, updateCollection } from "../collections.ts";
+import { addCollection, getCollection, isValidCollectionName, updateCollection } from "../collections.ts";
 import { existsSync, realpathSync, statSync } from "fs";
 import { resolve as pathResolve } from "path";
 import {
@@ -230,6 +230,12 @@ export function createAdminRoutes(store: Store): AdminRoute[] {
 
         if (!name || !rawPath) {
           return Response.json({ error: "name and path are required" }, { status: 400 });
+        }
+        if (!isValidCollectionName(name) || name === "_clawmem") {
+          return Response.json(
+            { error: "Invalid or reserved collection name. Use alphanumeric characters, dashes, or underscores." },
+            { status: 400 },
+          );
         }
 
         if (getCollection(name)) {

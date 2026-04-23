@@ -3,9 +3,12 @@ import ReactDOM from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createAppRouter } from "./app/router";
+import { bootstrapConsoleApiToken } from "./lib/api";
 import { queryClient } from "./lib/query-client";
 import "./styles/tokens.css";
 import "./styles/app.css";
+
+bootstrapConsoleApiToken();
 
 const router = createAppRouter();
 

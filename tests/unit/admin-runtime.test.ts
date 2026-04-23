@@ -37,6 +37,19 @@ describe("admin runtime adapters", () => {
     expect(snapshot.environment.CLAWMEM_HEAVY_LANE_WINDOW_END).toBe("9");
   });
 
+  test("parses quoted environment values without splitting on spaces", () => {
+    const snapshot = parseSystemctlShow([
+      "Id=clawmem-watcher.service",
+      "ActiveState=active",
+      "SubState=running",
+      "MainPID=3166023",
+      "Environment=CLAWMEM_LABEL=\"Primary Watcher\" CLAWMEM_ENABLE_CONSOLIDATION=true",
+    ].join("\n"));
+
+    expect(snapshot.environment.CLAWMEM_LABEL).toBe("Primary Watcher");
+    expect(snapshot.environment.CLAWMEM_ENABLE_CONSOLIDATION).toBe("true");
+  });
+
   test("parses journald JSON lines into structured log entries", () => {
     const entry = parseJournalJsonLine(JSON.stringify({
       __REALTIME_TIMESTAMP: "1776864223000000",

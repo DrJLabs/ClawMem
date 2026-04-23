@@ -21,10 +21,50 @@ function parsePid(value: string | undefined): number | null {
 
 function parseEnvironment(value: string | undefined): Record<string, string> {
   if (!value || value.trim().length === 0) return {};
+
+  const tokens: string[] = [];
+  let current = "";
+  let quote: "'" | "\"" | null = null;
+  let escaped = false;
+
+  for (const char of value) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+    if (char === "'" || char === "\"") {
+      quote = char;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += char;
+  }
+
+  if (current.length > 0) {
+    tokens.push(current);
+  }
+
   return Object.fromEntries(
-    value
-      .split(" ")
-      .filter(Boolean)
+    tokens
       .map((entry) => {
         const [key, ...rest] = entry.split("=");
         return [key ?? "", rest.join("=")];

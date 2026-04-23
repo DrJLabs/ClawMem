@@ -1,5 +1,5 @@
 import { parseVirtualPath, type Store } from "../store.ts";
-import { addCollection, getCollection, removeCollection, updateCollection } from "../collections.ts";
+import { addCollection, getCollection, updateCollection } from "../collections.ts";
 import { existsSync, statSync } from "fs";
 import { resolve as pathResolve } from "path";
 import {
@@ -54,8 +54,14 @@ function getRouteId(url: URL): string | null {
 }
 
 function getAdminDocumentId(url: URL): string | null {
-  const id = url.pathname.split("/")[3];
-  return id ? decodeURIComponent(id) : null;
+  const match = url.pathname.match(/^\/admin\/documents\/([^/]+)\/(?:pin|snooze|forget)$/);
+  const id = match?.[1];
+  if (!id) return null;
+  try {
+    return decodeURIComponent(id);
+  } catch {
+    return id;
+  }
 }
 
 function resolveActiveDocument(store: Store, docid: string) {

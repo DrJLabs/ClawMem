@@ -711,6 +711,8 @@ describe("console asset serving", () => {
     mkdirSync(TEST_UI_DIST, { recursive: true });
     writeFileSync(`${TEST_UI_DIST}/index.html`, "<!doctype html><html><body>console</body></html>");
     writeFileSync(`${TEST_UI_DIST}/app.js`, "console.log('ok');");
+    mkdirSync(`${TEST_UI_DIST}/assets`, { recursive: true });
+    writeFileSync("/tmp/clawmem-server-outside.txt", "outside");
 
     const indexRes = await fetch(`${BASE}/console`);
     expect(indexRes.status).toBe(200);
@@ -725,6 +727,13 @@ describe("console asset serving", () => {
     const missingAssetRes = await fetch(`${BASE}/console/missing.js`);
     expect(missingAssetRes.status).toBe(404);
 
+    const directoryRes = await fetch(`${BASE}/console/assets`);
+    expect(directoryRes.status).toBe(404);
+
+    const traversalRes = await fetch(`${BASE}/console/assets/%2e%2e/%2e%2e/%2e%2e/tmp/clawmem-server-outside.txt`);
+    expect(traversalRes.status).toBe(404);
+
+    rmSync("/tmp/clawmem-server-outside.txt", { force: true });
     rmSync(TEST_UI_DIST, { recursive: true, force: true });
   });
 

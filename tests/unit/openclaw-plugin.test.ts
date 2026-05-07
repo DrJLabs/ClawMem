@@ -154,6 +154,21 @@ describe("plugin manifest (§14.3 kind=memory)", () => {
     expect(content.configSchema.properties.gpuLlmModel).toBeDefined();
     expect(content.configSchema.properties.gpuLlmReasoningEffort).toBeDefined();
     expect(content.configSchema.properties.gpuLlmNoThink).toBeDefined();
+    expect(content.configSchema.properties.gpuLlmReasoningEffort.enum).toEqual([
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+  });
+
+  test("openclaw.plugin.json does not imply a default reasoning effort is sent", async () => {
+    const file = Bun.file(`${import.meta.dir}/../../src/openclaw/openclaw.plugin.json`);
+    const content = await file.json();
+    expect(content.uiHints.gpuLlmReasoningEffort.placeholder).toBe("(unset)");
+    expect(content.uiHints.gpuLlmReasoningEffort.help).toContain("Optional top-level reasoning_effort");
   });
 
   test("openclaw index maps remote LLM config to CLAWMEM env vars", async () => {

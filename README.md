@@ -147,48 +147,6 @@ clawmem update --embed
 clawmem doctor
 ```
 
-## Operator Console
-
-ClawMem now includes a mobile-first operator console for monitoring watcher health, recent background runs, extracted memory artifacts, collection scope, logs, and high-impact maintenance actions.
-
-### Local development
-
-Run the backend and the UI separately during development:
-
-```bash
-./bin/clawmem serve --port 7438
-bun run ui:dev
-```
-
-The Vite dev server proxies `/admin/*` and `/health` to the local ClawMem server on `127.0.0.1:7438`.
-
-### Build and serve through ClawMem
-
-Build the UI into `ui/dist`:
-
-```bash
-bun run ui:build
-```
-
-When `ui/dist` exists, `clawmem serve` mounts the built operator console at:
-
-```text
-/console
-```
-
-That makes it straightforward to expose the console through a local reverse proxy or a Tailscale-served local port while still keeping ClawMem itself on loopback.
-
-### Available operator surfaces
-
-The current console includes:
-
-- `Overview` for watcher health, backlog, and active work
-- `Runs` for admin jobs and maintenance runs
-- `Memory` for recent `_clawmem` extraction output
-- `Collections` for collection CRUD and reindex control
-- `More > Logs` for watcher journald output
-- `More` for maintenance and danger-zone admin actions
-
 ### Upgrading
 
 ```bash
@@ -235,7 +193,7 @@ clawmem setup openclaw   # Installs plugin into ~/.openclaw/extensions/clawmem (
 
 **What the plugin provides:**
 - **`before_prompt_build` hook (load-bearing)** - prompt-aware retrieval (context-surfacing + session-bootstrap) AND the pre-emptive `precompact-extract` run when token usage approaches the compaction threshold. This is the authoritative path for precompact state capture because it runs synchronously before the LLM call that would trigger compaction, so it cannot race the compactor.
-- **`agent_end` hook** - decision extraction, handoff generation, feedback loop (parallel, fire-and-forget at the OpenClaw call site)
+- **`agent_end` hook** - decision extraction, handoff generation, feedback loop (parallel, fire-and-forget at the OpenClaw call site). OpenClaw v2026.4.26+ also enforces a 30s default void-hook timeout on `agent_end` — slow handlers are logged but the underlying postrun work is not cancelled (fail-open).
 - **`before_compaction` hook (defense-in-depth fallback)** - fires `precompact-extract` again for the rare case where `before_prompt_build`'s proximity heuristic missed a sudden token-count jump. Fire-and-forget at OpenClaw's call site, so it races the compactor and offers no correctness guarantee on its own — the `before_prompt_build` path is what actually holds the invariant.
 - **`session_start` hook** - session registration + cached first-turn bootstrap context
 - **5 agent tools** - `clawmem_search`, `clawmem_get`, `clawmem_session_log`, `clawmem_timeline`, `clawmem_similar`
@@ -988,8 +946,8 @@ Notes referenced by the agent during a session get boosted (`access_count++`). U
 | `CLAWMEM_EMBED_DIMENSIONS` | (none) | Output dimensions for OpenAI `text-embedding-3-*` Matryoshka models (e.g. `512`, `1024`). |
 | `CLAWMEM_LLM_URL` | `http://localhost:8089` | LLM server URL for intent/query/A-MEM. Without it, falls to `node-llama-cpp` (if allowed). |
 | `CLAWMEM_LLM_MODEL` | `qwen3` | Model name sent to the configured LLM endpoint. Override this for OpenAI-compatible proxies such as `gpt-5.4-mini`. |
-| `CLAWMEM_LLM_REASONING_EFFORT` | (none) | Optional reasoning effort sent to supporting remote endpoints (for example `none`, `minimal`, `low`, `medium`, `high`, `xhigh`). |
-| `CLAWMEM_LLM_NO_THINK` | `true` | Append `/no_think` to remote LLM prompts. Set to `false` for endpoints that reject the Qwen-style suffix. |
+| `CLAWMEM_LLM_REASONING_EFFORT` | (none) | Optional top-level `reasoning_effort` field for Chat Completions endpoints that support it (for example OpenAI reasoning models). Leave unset for llama-server/vLLM unless your serving stack explicitly accepts that field. |
+| `CLAWMEM_LLM_NO_THINK` | `true` | Append `/no_think` to remote LLM prompts. Set to `false` for standard OpenAI models and other endpoints that reject or treat the Qwen-style suffix as literal prompt text. |
 | `CLAWMEM_RERANK_URL` | `http://localhost:8090` | Reranker server URL. Without it, falls to `node-llama-cpp` (if allowed). |
 | `CLAWMEM_NO_LOCAL_MODELS` | `false` | Block `node-llama-cpp` from auto-downloading GGUF models. Set `true` for remote-only setups where you want fail-fast on unreachable endpoints. |
 | `CLAWMEM_MERGE_SCORE_NORMAL` | `0.93` | **v0.7.1.** Phase 2 consolidation merge-safety threshold when candidate and existing anchors align. Merges above this normalized 3-gram cosine score are allowed. |

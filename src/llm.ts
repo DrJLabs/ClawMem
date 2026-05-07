@@ -243,7 +243,7 @@ export type LlamaCppConfig = {
    */
   remoteLlmModel?: string;
   /**
-   * Optional reasoning effort to send to remote LLM endpoints that support it.
+   * Optional top-level reasoning_effort field for Chat Completions endpoints that support it.
    * Example values: none, minimal, low, medium, high, xhigh.
    * Env: CLAWMEM_LLM_REASONING_EFFORT
    */
@@ -276,6 +276,23 @@ export type LlamaCppConfig = {
  */
 // Default inactivity timeout: 2 minutes
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 2 * 60 * 1000;
+const ALLOWED_REMOTE_LLM_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
+
+function normalizeRemoteLlmReasoningEffort(value?: string): string | null {
+  const raw = (value || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (!ALLOWED_REMOTE_LLM_REASONING_EFFORTS.has(raw)) {
+    console.warn(`[clawmem] Ignoring unsupported remoteLlmReasoningEffort=${raw}`);
+    return null;
+  }
+  return raw;
+}
+
+function buildRemoteChatCompletionsUrl(remoteLlmUrl: string): string {
+  const baseUrl = remoteLlmUrl.replace(/\/+$/, "");
+  const endpoint = baseUrl.endsWith("/v1") ? "/chat/completions" : "/v1/chat/completions";
+  return `${baseUrl}${endpoint}`;
+}
 
 export class LlamaCpp implements LLM {
   private llama: Llama | null = null;
@@ -326,8 +343,9 @@ export class LlamaCpp implements LLM {
     this.remoteEmbedApiKey = config.remoteEmbedApiKey || null;
     this.remoteEmbedModel = config.remoteEmbedModel || "embedding";
     this.remoteLlmUrl = config.remoteLlmUrl || null;
-    this.remoteLlmModel = config.remoteLlmModel || "qwen3";
-    this.remoteLlmReasoningEffort = config.remoteLlmReasoningEffort || null;
+    const normalizedRemoteLlmModel = config.remoteLlmModel?.trim();
+    this.remoteLlmModel = normalizedRemoteLlmModel || "qwen3";
+    this.remoteLlmReasoningEffort = normalizeRemoteLlmReasoningEffort(config.remoteLlmReasoningEffort);
     this.remoteLlmNoThink = config.remoteLlmNoThink ?? true;
     this.inactivityTimeoutMs = config.inactivityTimeoutMs ?? DEFAULT_INACTIVITY_TIMEOUT_MS;
     this.disposeModelsOnInactivity = config.disposeModelsOnInactivity ?? false;
@@ -953,7 +971,7 @@ export class LlamaCpp implements LLM {
       if (this.remoteLlmReasoningEffort) {
         body.reasoning_effort = this.remoteLlmReasoningEffort;
       }
-      const resp = await fetch(`${this.remoteLlmUrl}/v1/chat/completions`, {
+      const resp = await fetch(buildRemoteChatCompletionsUrl(this.remoteLlmUrl!), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -1281,7 +1299,7 @@ export function getDefaultLlamaCpp(): LlamaCpp {
       remoteEmbedApiKey: embedApiKey,
       remoteEmbedModel: process.env.CLAWMEM_EMBED_MODEL || undefined,
       remoteLlmUrl: process.env.CLAWMEM_LLM_URL || undefined,
-      remoteLlmModel: process.env.CLAWMEM_LLM_MODEL || undefined,
+      remoteLlmModel: process.env.CLAWMEM_LLM_MODEL?.trim() || undefined,
       remoteLlmReasoningEffort: process.env.CLAWMEM_LLM_REASONING_EFFORT || undefined,
       remoteLlmNoThink: (() => {
         const raw = (process.env.CLAWMEM_LLM_NO_THINK || "").trim().toLowerCase();

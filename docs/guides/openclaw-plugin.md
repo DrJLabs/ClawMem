@@ -115,6 +115,8 @@ The plugin manifest (`src/openclaw/openclaw.plugin.json`) supports:
 | `gpuEmbed` | `http://localhost:8088` | Embedding endpoint override |
 | `gpuLlm` | `http://localhost:8089` | LLM endpoint override |
 | `gpuLlmModel` | `qwen3` | Model name sent to the configured LLM endpoint |
+| `gpuLlmReasoningEffort` | `(unset)` | Optional top-level `reasoning_effort` field for Chat Completions endpoints that support it (for example OpenAI reasoning models); unset omits the field |
+| `gpuLlmNoThink` | `true` | Append `/no_think` to remote LLM prompts. Set false for standard OpenAI models and other endpoints that reject or treat the suffix as literal prompt text |
 | `gpuRerank` | `http://localhost:8090` | Reranker endpoint override |
 
 For example, to use an OpenAI-compatible proxy instead of the default llama-server model selection:
@@ -122,6 +124,7 @@ For example, to use an OpenAI-compatible proxy instead of the default llama-serv
 ```bash
 openclaw config set plugins.entries.clawmem.config.gpuLlm http://127.0.0.1:8000
 openclaw config set plugins.entries.clawmem.config.gpuLlmModel gpt-5.4-mini
+openclaw config set plugins.entries.clawmem.config.gpuLlmNoThink false
 ```
 
 ## Coexistence with OpenClaw Active Memory

@@ -49,13 +49,13 @@
     },
     "gpuLlmReasoningEffort": {
       "label": "Reasoning Effort",
-      "placeholder": "none",
-      "help": "Optional reasoning effort (none, minimal, low, medium, high, xhigh)",
+      "placeholder": "(unset)",
+      "help": "Optional top-level reasoning_effort for Chat Completions endpoints that support it. Unset omits the field.",
       "advanced": true
     },
     "gpuLlmNoThink": {
       "label": "Append /no_think",
-      "help": "Append /no_think to remote LLM prompts (default: true)",
+      "help": "Append /no_think to remote LLM prompts (default: true). Disable for standard OpenAI models.",
       "advanced": true
     },
     "gpuRerank": {
@@ -99,7 +99,8 @@
         "type": "string"
       },
       "gpuLlmReasoningEffort": {
-        "type": "string"
+        "type": "string",
+        "enum": ["none", "minimal", "low", "medium", "high", "xhigh"]
       },
       "gpuLlmNoThink": {
         "type": "boolean"

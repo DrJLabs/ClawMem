@@ -16,6 +16,8 @@ Config via environment variables:
   CLAWMEM_EMBED_URL     — GPU embedding server URL (optional)
   CLAWMEM_LLM_URL       — GPU LLM server URL (optional)
   CLAWMEM_LLM_MODEL     — Model name sent to the GPU/cloud LLM endpoint (optional)
+  CLAWMEM_LLM_REASONING_EFFORT — Top-level reasoning_effort for supporting Chat Completions endpoints (optional)
+  CLAWMEM_LLM_NO_THINK  — Append /no_think to remote prompts; false disables it for standard OpenAI models (optional)
   CLAWMEM_RERANK_URL    — GPU reranker server URL (optional)
 
 Agent-context isolation:
@@ -304,13 +306,13 @@ class ClawMemProvider(MemoryProvider):
             },
             {
                 "key": "llm_reasoning_effort",
-                "description": "Optional reasoning effort (none, minimal, low, medium, high, xhigh)",
+                "description": "Optional top-level reasoning_effort for Chat Completions endpoints that support it",
                 "secret": False,
                 "env_var": "CLAWMEM_LLM_REASONING_EFFORT",
             },
             {
                 "key": "llm_no_think",
-                "description": "Append /no_think to remote LLM prompts (default: true)",
+                "description": "Append /no_think to remote LLM prompts; disable for standard OpenAI models",
                 "secret": False,
                 "env_var": "CLAWMEM_LLM_NO_THINK",
             },
